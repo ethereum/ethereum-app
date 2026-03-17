@@ -99,10 +99,61 @@ fn get_seed() -> Result<crate::crypto::Seed, EthAppError> {
 
 #[cfg(not(feature = "dev-mode"))]
 fn get_seed() -> Result<crate::crypto::Seed, EthAppError> {
-    // TODO: In production, load the master seed from PDDB secure storage.
-    // The seed should be derived during device initialization and stored
-    // encrypted under the user's PIN/password. This placeholder returns an
-    // error until real key storage is implemented.
+    // Production seed loading via PDDB secure storage.
+    //
+    // The master seed is stored encrypted in the PDDB under the
+    // "ethapp.ethereum" dictionary with key "master_seed". The PDDB
+    // provides plausible deniability through its basis system and
+    // encrypts all data at rest.
+    //
+    // # Security Model
+    //
+    // - The seed is derived during device initialization from the user's
+    //   BIP39 mnemonic and stored in PDDB under PIN/password protection.
+    // - The PDDB basis must be unlocked (user authenticated) before the
+    //   seed can be read. If the basis is locked, this returns an error.
+    // - The seed bytes are validated for length (exactly 64 bytes) before
+    //   constructing the Seed type. This prevents truncation attacks.
+    // - On the Baochip-1x, the PDDB encryption key is derived from the
+    //   device root key stored in the hardware keystore (efuse-protected).
+    //
+    // # Docs consulted
+    //
+    // - xous-core services/pddb/src/lib.rs: Pddb::get() API
+    // - platform.rs: PDDB_DICT, PDDB_KEY_SEED constants
+    //
+    // TODO(baochip): Implement actual PDDB read when pddb crate is
+    // available in the Baochip Xous build. The implementation will be:
+    //
+    //   let pddb = pddb::Pddb::new();
+    //   pddb.is_mounted_blocking(); // ensure PDDB is ready
+    //   let mut handle = pddb.get(
+    //       crate::platform::PDDB_DICT,
+    //       crate::platform::PDDB_KEY_SEED,
+    //       None,               // default basis (user's unlocked basis)
+    //       false,              // do not create if missing
+    //       false,              // no alloc
+    //       None,               // no size hint
+    //       None::<fn()>,       // no change callback
+    //   ).map_err(|_| EthAppError::StorageError)?;
+    //
+    //   use std::io::Read;
+    //   let mut seed_bytes = [0u8; 64];
+    //   let bytes_read = handle.read(&mut seed_bytes)
+    //       .map_err(|_| EthAppError::StorageError)?;
+    //   if bytes_read != 64 {
+    //       // Truncated or corrupt seed -- fail closed.
+    //       seed_bytes.zeroize();
+    //       return Err(EthAppError::StorageError);
+    //   }
+    //
+    //   // Alternatively, for Baochip-1x: the 256-bit Backup Register
+    //   // could hold a master secret that is KDF'd into the full seed.
+    //   // This would require: backup_reg_read() -> HKDF-SHA256 -> 64-byte seed
+    //
+    //   Ok(crate::crypto::Seed::from_bytes(&seed_bytes))
+    //
+    // Until PDDB is integrated, fail closed.
     Err(EthAppError::UnsupportedOperation)
 }
 
