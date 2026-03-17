@@ -93,14 +93,14 @@ impl Platform for XousPlatform {
         // Use TRNG service to fill buffer with random bytes
         //
         // For now, use a fallback that works during development
-        // WARNING: This is NOT cryptographically secure for production!
+        // SECURITY WARNING: This is NOT cryptographically secure.
+        // Dev-mode only: uses a deterministic seed for reproducible testing.
+        // std::time::SystemTime is unavailable in no_std Xous builds.
+        // In production, TRNG service must be used instead.
         #[cfg(feature = "dev-mode")]
         {
-            // Use a simple PRNG seeded from time for dev testing
-            let seed = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos() as u64)
-                .unwrap_or(0);
+            // Deterministic test seed -- INSECURE, for development only.
+            let seed: u64 = u64::from_le_bytes([0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE]);
 
             let mut state = seed;
             for byte in buf.iter_mut() {

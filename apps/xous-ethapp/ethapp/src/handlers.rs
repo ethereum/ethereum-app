@@ -61,15 +61,48 @@ pub fn return_error(_msg: (), error: EthAppError) -> Result<(), EthAppError> {
     Err(error)
 }
 
-/// Get the development seed for testing.
+/// Safely extract a Buffer from a Xous memory message.
+///
+/// Encapsulates the single `unsafe` call to `Buffer::from_memory_message`,
+/// validating the message type first. This is the only place in the codebase
+/// where this unsafe operation occurs.
+///
+/// # Safety justification
+/// `Buffer::from_memory_message` is unsafe because it constructs a Buffer from
+/// a raw kernel-provided memory region. The safety is ensured by:
+/// - The Xous kernel guarantees valid memory mapping for Borrow/MutableBorrow messages
+/// - We validate the message type before calling the unsafe function
+/// - The Buffer lifetime is bounded by the message lifetime
+#[cfg(target_os = "xous")]
+fn extract_buffer(msg: &xous::MessageEnvelope) -> Result<xous_ipc::Buffer, EthAppError> {
+    use xous::Message;
+    use xous_ipc::Buffer;
+    match &msg.body {
+        Message::MutableBorrow(b) | Message::Borrow(b) => {
+            // SAFETY: The Xous kernel guarantees that Borrow/MutableBorrow messages
+            // contain valid memory regions mapped into our address space.
+            unsafe { Buffer::from_memory_message(b) }
+                .map_err(|_| EthAppError::InvalidData)
+        }
+        _ => Err(EthAppError::InvalidData),
+    }
+}
+
+/// Get the seed for key derivation.
+///
+/// Both dev-mode and production paths return the same type to prevent
+/// compilation errors where callers use `?` for one cfg but not the other.
 #[cfg(feature = "dev-mode")]
-fn get_seed() -> crate::crypto::Seed {
-    crate::crypto::get_dev_seed()
+fn get_seed() -> Result<crate::crypto::Seed, EthAppError> {
+    Ok(crate::crypto::get_dev_seed())
 }
 
 #[cfg(not(feature = "dev-mode"))]
 fn get_seed() -> Result<crate::crypto::Seed, EthAppError> {
-    // In production, this would load from secure storage
+    // TODO: In production, load the master seed from PDDB secure storage.
+    // The seed should be derived during device initialization and stored
+    // encrypted under the user's PIN/password. This placeholder returns an
+    // error until real key storage is implemented.
     Err(EthAppError::UnsupportedOperation)
 }
 
@@ -150,16 +183,9 @@ pub fn handle_sign_transaction(
     msg: xous::MessageEnvelope,
 ) -> Result<(), EthAppError> {
     use xous_ipc::Buffer;
-    use xous::Message;
 
     // Extract request from memory message
-    let buffer = match &msg.body {
-        Message::MutableBorrow(b) | Message::Borrow(b) => {
-            unsafe { Buffer::from_memory_message(b) }
-                .map_err(|_| EthAppError::InvalidData)?
-        }
-        _ => return Err(EthAppError::InvalidData),
-    };
+    let buffer = extract_buffer(&msg)?;
 
     let request: SignTransactionRequest = buffer.to_original()
         .map_err(|_| EthAppError::SerializationError)?;
@@ -211,16 +237,15 @@ fn process_sign_transaction(
         return Err(EthAppError::RejectedByUser);
     }
 
-    // Get seed and derive key
-    #[cfg(feature = "dev-mode")]
-    let seed = get_seed();
-    #[cfg(not(feature = "dev-mode"))]
-    let seed = get_seed()?;
-
-    let signing_key = derive_private_key(&seed, &request.path)?;
-
-    // Sign the transaction
-    let signature = sign_eth(&signing_key, &tx.sign_hash, tx.chain_id, tx.tx_type)?;
+    // Get seed and derive key; sign in a tight scope so the signing key
+    // is dropped (and zeroized via k256's ZeroizeOnDrop) immediately after use.
+    let signature = {
+        let seed = get_seed()?;
+        let signing_key = derive_private_key(&seed, &request.path)?;
+        // seed is Zeroize+Drop, signing_key has ZeroizeOnDrop
+        sign_eth(&signing_key, &tx.sign_hash, tx.chain_id, tx.tx_type)?
+        // signing_key and seed dropped here, secret material zeroized
+    };
 
     state.platform.show_info(true, "Transaction signed");
 
@@ -257,15 +282,8 @@ pub fn handle_sign_personal_message(
     msg: xous::MessageEnvelope,
 ) -> Result<(), EthAppError> {
     use xous_ipc::Buffer;
-    use xous::Message;
 
-    let buffer = match &msg.body {
-        Message::MutableBorrow(b) | Message::Borrow(b) => {
-            unsafe { Buffer::from_memory_message(b) }
-                .map_err(|_| EthAppError::InvalidData)?
-        }
-        _ => return Err(EthAppError::InvalidData),
-    };
+    let buffer = extract_buffer(&msg)?;
 
     let request: SignPersonalMessageRequest = buffer.to_original()
         .map_err(|_| EthAppError::SerializationError)?;
@@ -315,16 +333,14 @@ fn process_sign_personal_message(
         return Err(EthAppError::RejectedByUser);
     }
 
-    // Get seed and derive key
-    #[cfg(feature = "dev-mode")]
-    let seed = get_seed();
-    #[cfg(not(feature = "dev-mode"))]
-    let seed = get_seed()?;
-
-    let signing_key = derive_private_key(&seed, &request.path)?;
-
-    // Sign the message
-    let signature = sign_personal_message(&signing_key, &request.message)?;
+    // Get seed and derive key; sign in a tight scope so the signing key
+    // is dropped (and zeroized via k256's ZeroizeOnDrop) immediately after use.
+    let signature = {
+        let seed = get_seed()?;
+        let signing_key = derive_private_key(&seed, &request.path)?;
+        sign_personal_message(&signing_key, &request.message)?
+        // signing_key and seed dropped here, secret material zeroized
+    };
 
     state.platform.show_info(true, "Message signed");
 
@@ -338,20 +354,13 @@ pub fn handle_sign_eip712_hashed(
     msg: xous::MessageEnvelope,
 ) -> Result<(), EthAppError> {
     use xous_ipc::Buffer;
-    use xous::Message;
 
     // Check if blind signing is enabled
     if !state.config.blind_signing_enabled {
         return Err(EthAppError::BlindSigningDisabled);
     }
 
-    let buffer = match &msg.body {
-        Message::MutableBorrow(b) | Message::Borrow(b) => {
-            unsafe { Buffer::from_memory_message(b) }
-                .map_err(|_| EthAppError::InvalidData)?
-        }
-        _ => return Err(EthAppError::InvalidData),
-    };
+    let buffer = extract_buffer(&msg)?;
 
     let request: SignEip712HashedRequest = buffer.to_original()
         .map_err(|_| EthAppError::SerializationError)?;
@@ -399,16 +408,14 @@ fn process_sign_eip712_hashed(
         return Err(EthAppError::RejectedByUser);
     }
 
-    // Get seed and derive key
-    #[cfg(feature = "dev-mode")]
-    let seed = get_seed();
-    #[cfg(not(feature = "dev-mode"))]
-    let seed = get_seed()?;
-
-    let signing_key = derive_private_key(&seed, &request.path)?;
-
-    // Sign
-    let signature = sign_eip712(&signing_key, &request.domain_hash, &request.message_hash)?;
+    // Get seed and derive key; sign in a tight scope so the signing key
+    // is dropped (and zeroized via k256's ZeroizeOnDrop) immediately after use.
+    let signature = {
+        let seed = get_seed()?;
+        let signing_key = derive_private_key(&seed, &request.path)?;
+        sign_eip712(&signing_key, &request.domain_hash, &request.message_hash)?
+        // signing_key and seed dropped here, secret material zeroized
+    };
 
     state.platform.show_info(true, "Typed data signed");
 
@@ -422,15 +429,8 @@ pub fn handle_sign_eip712_message(
     msg: xous::MessageEnvelope,
 ) -> Result<(), EthAppError> {
     use xous_ipc::Buffer;
-    use xous::Message;
 
-    let buffer = match &msg.body {
-        Message::MutableBorrow(b) | Message::Borrow(b) => {
-            unsafe { Buffer::from_memory_message(b) }
-                .map_err(|_| EthAppError::InvalidData)?
-        }
-        _ => return Err(EthAppError::InvalidData),
-    };
+    let buffer = extract_buffer(&msg)?;
 
     let request: SignEip712MessageRequest = buffer.to_original()
         .map_err(|_| EthAppError::SerializationError)?;
@@ -490,16 +490,14 @@ fn process_sign_eip712_message(
         return Err(EthAppError::RejectedByUser);
     }
 
-    // Get seed and derive key
-    #[cfg(feature = "dev-mode")]
-    let seed = get_seed();
-    #[cfg(not(feature = "dev-mode"))]
-    let seed = get_seed()?;
-
-    let signing_key = derive_private_key(&seed, &request.path)?;
-
-    // Sign
-    let signature = sign_eip712(&signing_key, &domain_hash, &message_hash)?;
+    // Get seed and derive key; sign in a tight scope so the signing key
+    // is dropped (and zeroized via k256's ZeroizeOnDrop) immediately after use.
+    let signature = {
+        let seed = get_seed()?;
+        let signing_key = derive_private_key(&seed, &request.path)?;
+        sign_eip712(&signing_key, &domain_hash, &message_hash)?
+        // signing_key and seed dropped here, secret material zeroized
+    };
 
     state.platform.show_info(true, "Typed data signed");
 
@@ -516,16 +514,7 @@ pub fn handle_provide_erc20_token_info(
     state: &mut ServiceState,
     msg: xous::MessageEnvelope,
 ) -> Result<(), EthAppError> {
-    use xous_ipc::Buffer;
-    use xous::Message;
-
-    let buffer = match &msg.body {
-        Message::MutableBorrow(b) | Message::Borrow(b) => {
-            unsafe { Buffer::from_memory_message(b) }
-                .map_err(|_| EthAppError::InvalidData)?
-        }
-        _ => return Err(EthAppError::InvalidData),
-    };
+    let buffer = extract_buffer(&msg)?;
 
     let request: ProvideTokenInfoRequest = buffer.to_original()
         .map_err(|_| EthAppError::SerializationError)?;
@@ -539,12 +528,35 @@ pub fn handle_provide_erc20_token_info(
         return Err(EthAppError::InvalidParameter);
     }
 
-    // TODO: Verify signature against trusted public key
-    // For now, accept without verification (mark as unverified)
+    // SECURITY WARNING (CRITICAL-04): Metadata signature is NOT verified.
+    // An attacker can provide arbitrary token info (fake ticker, wrong decimals)
+    // which will be displayed to the user during transaction signing.
+    // This can trick users into signing transactions that transfer different
+    // amounts or different tokens than displayed.
+    //
+    // TODO: Implement signature verification against a trusted Ledger/provider
+    // public key before accepting metadata. Until then, all cached metadata
+    // is marked as unverified and displayed with an "[UNVERIFIED]" prefix.
+    //
+    // The `request.signature` field is present but currently ignored.
+    // Verification should check: ECDSA(sha256(chain_id || address || ticker || decimals))
+    // against a known trusted public key embedded at build time.
 
-    state.cache_token_info(request.info);
+    log::warn!(
+        "ethapp: Accepted UNVERIFIED token info for chain={}, ticker={}",
+        request.info.chain_id,
+        request.info.ticker
+    );
 
-    xous::return_scalar(msg.sender, 1) // accepted = true
+    // Prefix ticker with [UNVERIFIED] to warn the user during display
+    let mut unverified_info = request.info;
+    let mut unverified_ticker = String::from("[UNVERIFIED] ");
+    unverified_ticker.push_str(&unverified_info.ticker);
+    unverified_info.ticker = unverified_ticker;
+
+    state.cache_token_info(unverified_info);
+
+    xous::return_scalar(msg.sender, 1) // accepted = true (but unverified)
         .map_err(|_| EthAppError::InternalError)
 }
 
@@ -559,56 +571,123 @@ pub fn handle_provide_erc20_token_info(
     if request.info.decimals > 36 {
         return Err(EthAppError::InvalidParameter);
     }
-    state.cache_token_info(request.info.clone());
+
+    // SECURITY WARNING (CRITICAL-04): Metadata signature NOT verified.
+    // See Xous-target handler for full explanation.
+    let mut unverified_info = request.info.clone();
+    let mut unverified_ticker = String::from("[UNVERIFIED] ");
+    unverified_ticker.push_str(&unverified_info.ticker);
+    unverified_info.ticker = unverified_ticker;
+
+    state.cache_token_info(unverified_info);
     Ok(true)
 }
 
-// Stub handlers for other metadata operations
+// Stub handlers for other metadata operations.
+// These validate the incoming message format but return UnsupportedOperation
+// since the actual metadata processing is not yet implemented.
+
 #[cfg(target_os = "xous")]
 pub fn handle_provide_nft_info(
-    state: &mut ServiceState,
+    _state: &mut ServiceState,
     msg: xous::MessageEnvelope,
 ) -> Result<(), EthAppError> {
-    xous::return_scalar(msg.sender, 1)
+    use ethapp_common::ProvideNftInfoRequest;
+
+    // Validate that we received a well-formed memory message
+    let buffer = extract_buffer(&msg)?;
+
+    // Deserialize to validate format (discard result)
+    let _request: ProvideNftInfoRequest = buffer.to_original()
+        .map_err(|_| EthAppError::SerializationError)?;
+
+    log::warn!("ethapp: handle_provide_nft_info called but not yet implemented");
+
+    // Return error code indicating not yet implemented
+    xous::return_scalar(msg.sender, EthAppError::UnsupportedOperation.code() as usize)
         .map_err(|_| EthAppError::InternalError)
 }
 
 #[cfg(target_os = "xous")]
 pub fn handle_provide_domain_name(
-    state: &mut ServiceState,
+    _state: &mut ServiceState,
     msg: xous::MessageEnvelope,
 ) -> Result<(), EthAppError> {
-    xous::return_scalar(msg.sender, 1)
+    use ethapp_common::ProvideDomainNameRequest;
+
+    // Validate that we received a well-formed memory message
+    let buffer = extract_buffer(&msg)?;
+
+    // Deserialize to validate format (discard result)
+    let _request: ProvideDomainNameRequest = buffer.to_original()
+        .map_err(|_| EthAppError::SerializationError)?;
+
+    log::warn!("ethapp: handle_provide_domain_name called but not yet implemented");
+
+    // Return error code indicating not yet implemented
+    xous::return_scalar(msg.sender, EthAppError::UnsupportedOperation.code() as usize)
         .map_err(|_| EthAppError::InternalError)
 }
 
 #[cfg(target_os = "xous")]
 pub fn handle_load_contract_method_info(
-    state: &mut ServiceState,
+    _state: &mut ServiceState,
     msg: xous::MessageEnvelope,
 ) -> Result<(), EthAppError> {
-    xous::return_scalar(msg.sender, 1)
+    use ethapp_common::ProvideMethodInfoRequest;
+
+    // Validate that we received a well-formed memory message
+    let buffer = extract_buffer(&msg)?;
+
+    // Deserialize to validate format (discard result)
+    let _request: ProvideMethodInfoRequest = buffer.to_original()
+        .map_err(|_| EthAppError::SerializationError)?;
+
+    log::warn!("ethapp: handle_load_contract_method_info called but not yet implemented");
+
+    // Return error code indicating not yet implemented
+    xous::return_scalar(msg.sender, EthAppError::UnsupportedOperation.code() as usize)
         .map_err(|_| EthAppError::InternalError)
 }
 
+/// Handle ByContractAddressAndChain request.
+///
+/// Uses a memory message to receive chain_id (u64) + address (20 bytes).
+/// A scalar message cannot carry a full Ethereum address on RV32:
+/// 4 scalar args * 4 bytes (usize on RV32) = 16 bytes, but
+/// chain_id (8 bytes) + address (20 bytes) = 28 bytes total needed.
 #[cfg(target_os = "xous")]
 pub fn handle_by_contract_address_and_chain(
     state: &mut ServiceState,
     msg: xous::MessageEnvelope,
 ) -> Result<(), EthAppError> {
-    use xous::Message;
+    // Use memory message to receive the full chain_id + address payload.
+    // Reject scalar messages -- they cannot carry a full 20-byte
+    // Ethereum address on RV32 (usize = 4, so 4 args = 16 bytes max).
+    let buffer = extract_buffer(&msg).map_err(|e| {
+        log::warn!(
+            "ethapp: handle_by_contract_address_and_chain requires a memory message, \
+             scalar messages truncate the 20-byte address on RV32"
+        );
+        e
+    })?;
 
-    // Extract chain_id and address from scalar message
-    if let Message::Scalar(s) = &msg.body {
-        let chain_id = ((s.arg1 as u64) << 32) | (s.arg2 as u64);
-        // Address would need to be passed via memory message for full 20 bytes
-        // For now, use first 8 bytes from args
-        let mut address = [0u8; 20];
-        address[..8].copy_from_slice(&(s.arg3 as u64).to_be_bytes());
-        address[8..16].copy_from_slice(&(s.arg4 as u64).to_be_bytes());
+    let raw: &[u8] = buffer.as_flat::<u8, _>()
+        .map_err(|_| EthAppError::InvalidData)?;
 
-        state.set_context(chain_id, address);
+    // Expect exactly 28 bytes: chain_id (8 bytes BE) + address (20 bytes)
+    if raw.len() < 28 {
+        return Err(EthAppError::InvalidData);
     }
+
+    let mut chain_id_bytes = [0u8; 8];
+    chain_id_bytes.copy_from_slice(&raw[..8]);
+    let chain_id = u64::from_be_bytes(chain_id_bytes);
+
+    let mut address = [0u8; 20];
+    address.copy_from_slice(&raw[8..28]);
+
+    state.set_context(chain_id, address);
 
     xous::return_scalar(msg.sender, 1)
         .map_err(|_| EthAppError::InternalError)
@@ -625,15 +704,8 @@ pub fn handle_get_public_key(
     msg: xous::MessageEnvelope,
 ) -> Result<(), EthAppError> {
     use xous_ipc::Buffer;
-    use xous::Message;
 
-    let buffer = match &msg.body {
-        Message::MutableBorrow(b) | Message::Borrow(b) => {
-            unsafe { Buffer::from_memory_message(b) }
-                .map_err(|_| EthAppError::InvalidData)?
-        }
-        _ => return Err(EthAppError::InvalidData),
-    };
+    let buffer = extract_buffer(&msg)?;
 
     let path: Bip32Path = buffer.to_original()
         .map_err(|_| EthAppError::SerializationError)?;
@@ -665,14 +737,15 @@ fn process_get_public_key(path: &Bip32Path) -> Result<PublicKeyResponse, EthAppE
         return Err(EthAppError::InvalidDerivationPath);
     }
 
-    #[cfg(feature = "dev-mode")]
-    let seed = get_seed();
-    #[cfg(not(feature = "dev-mode"))]
-    let seed = get_seed()?;
-
-    let signing_key = derive_private_key(&seed, path)?;
-    let pubkey = get_compressed_pubkey(&signing_key);
-    let address = public_key_to_address(&get_public_key(&signing_key));
+    // Derive key in a scope to ensure prompt zeroization of secret material.
+    let (pubkey, address) = {
+        let seed = get_seed()?;
+        let signing_key = derive_private_key(&seed, path)?;
+        let pk = get_compressed_pubkey(&signing_key);
+        let addr = public_key_to_address(&get_public_key(&signing_key));
+        (pk, addr)
+        // signing_key and seed dropped here, secret material zeroized
+    };
 
     Ok(PublicKeyResponse { pubkey, address })
 }
@@ -684,15 +757,8 @@ pub fn handle_get_address(
     msg: xous::MessageEnvelope,
 ) -> Result<(), EthAppError> {
     use xous_ipc::Buffer;
-    use xous::Message;
 
-    let buffer = match &msg.body {
-        Message::MutableBorrow(b) | Message::Borrow(b) => {
-            unsafe { Buffer::from_memory_message(b) }
-                .map_err(|_| EthAppError::InvalidData)?
-        }
-        _ => return Err(EthAppError::InvalidData),
-    };
+    let buffer = extract_buffer(&msg)?;
 
     let path: Bip32Path = buffer.to_original()
         .map_err(|_| EthAppError::SerializationError)?;

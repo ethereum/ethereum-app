@@ -118,9 +118,15 @@ fn handle_message(
         }
         EthAppOp::Exit => {
             log::info!("ethapp: Received exit command");
-            // In production, this should be restricted
+            // In production, this should be restricted to authorized callers
             #[cfg(feature = "dev-mode")]
-            std::process::exit(0);
+            {
+                // Use Xous-native process termination, not std::process::exit
+                // which is unavailable in no_std Xous builds.
+                xous::terminate_process(0);
+                // terminate_process may not return, but if it does,
+                // the main loop continues safely.
+            }
         }
 
         // === Transaction Signing ===

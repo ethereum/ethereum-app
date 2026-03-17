@@ -264,7 +264,7 @@ pub fn sign_personal_message(
     s.copy_from_slice(&s_bytes);
 
     Ok(Signature {
-        v: 27 + recid.to_byte(),
+        v: 27u64 + recid.to_byte() as u64,
         r,
         s,
     })
@@ -299,7 +299,7 @@ pub fn sign_eip712(
     s.copy_from_slice(&s_bytes);
 
     Ok(Signature {
-        v: 27 + recid.to_byte(),
+        v: 27u64 + recid.to_byte() as u64,
         r,
         s,
     })
@@ -314,11 +314,13 @@ pub fn sign_eip712(
 /// - Legacy with chain ID (EIP-155): v = chain_id * 2 + 35 + recovery_id
 /// - Legacy without chain ID: v = 27 + recovery_id
 /// - Typed transactions (EIP-2930/EIP-1559): v = recovery_id (0 or 1)
+///
+/// Returns u64 to support large chain IDs per EIP-155.
 fn compute_v(
     recovery_id: u8,
     chain_id: Option<u64>,
     tx_type: TransactionType,
-) -> Result<u8, EthAppError> {
+) -> Result<u64, EthAppError> {
     match tx_type {
         TransactionType::Legacy => {
             if let Some(cid) = chain_id {
@@ -329,19 +331,15 @@ fn compute_v(
                     .and_then(|x| x.checked_add(recovery_id as u64))
                     .ok_or(EthAppError::InvalidTransaction)?;
 
-                if v > 255 {
-                    // Large chain ID - client should use typed transactions
-                    return Err(EthAppError::InvalidTransaction);
-                }
-                Ok(v as u8)
+                Ok(v)
             } else {
                 // Pre-EIP-155
-                Ok(27 + recovery_id)
+                Ok(27u64 + recovery_id as u64)
             }
         }
         TransactionType::AccessList | TransactionType::FeeMarket => {
             // Typed transactions use just recovery_id (0 or 1)
-            Ok(recovery_id)
+            Ok(recovery_id as u64)
         }
     }
 }
@@ -416,29 +414,45 @@ mod tests {
     fn test_compute_v_legacy_eip155() {
         // Chain ID 1: v = 1 * 2 + 35 + 0 = 37
         let v = compute_v(0, Some(1), TransactionType::Legacy).unwrap();
-        assert_eq!(v, 37);
+        assert_eq!(v, 37u64);
 
         // Chain ID 1: v = 1 * 2 + 35 + 1 = 38
         let v = compute_v(1, Some(1), TransactionType::Legacy).unwrap();
-        assert_eq!(v, 38);
+        assert_eq!(v, 38u64);
     }
 
     #[test]
     fn test_compute_v_legacy_no_chain() {
         let v = compute_v(0, None, TransactionType::Legacy).unwrap();
-        assert_eq!(v, 27);
+        assert_eq!(v, 27u64);
 
         let v = compute_v(1, None, TransactionType::Legacy).unwrap();
-        assert_eq!(v, 28);
+        assert_eq!(v, 28u64);
     }
 
     #[test]
     fn test_compute_v_typed() {
         let v = compute_v(0, Some(1), TransactionType::FeeMarket).unwrap();
-        assert_eq!(v, 0);
+        assert_eq!(v, 0u64);
 
         let v = compute_v(1, Some(1), TransactionType::FeeMarket).unwrap();
-        assert_eq!(v, 1);
+        assert_eq!(v, 1u64);
+    }
+
+    #[test]
+    fn test_compute_v_large_chain_id() {
+        // Chain ID 56 (BSC): v = 56 * 2 + 35 + 0 = 147
+        let v = compute_v(0, Some(56), TransactionType::Legacy).unwrap();
+        assert_eq!(v, 147u64);
+
+        // Chain ID 137 (Polygon): v = 137 * 2 + 35 + 1 = 310
+        // This previously overflowed u8 (max 255)
+        let v = compute_v(1, Some(137), TransactionType::Legacy).unwrap();
+        assert_eq!(v, 310u64);
+
+        // Chain ID 999999: v = 999999 * 2 + 35 + 0 = 2000033
+        let v = compute_v(0, Some(999_999), TransactionType::Legacy).unwrap();
+        assert_eq!(v, 2_000_033u64);
     }
 
     #[test]

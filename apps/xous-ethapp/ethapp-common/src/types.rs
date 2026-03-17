@@ -137,11 +137,15 @@ impl Bip32Path {
 ///
 /// For transactions, v follows EIP-155: v = chain_id * 2 + 35 + recovery_id
 /// For messages, v = 27 + recovery_id
+///
+/// The `v` field is u64 to support EIP-155 with large chain IDs
+/// (chain_id > 110 would overflow u8 with the formula chain_id * 2 + 35 + recid).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Archive, Serialize, Deserialize, Zeroize)]
 #[archive(check_bytes)]
 pub struct Signature {
     /// Recovery identifier (27/28 for legacy, EIP-155 for transactions).
-    pub v: u8,
+    /// u64 to accommodate EIP-155 v values for chains with large IDs.
+    pub v: u64,
     /// R component (32 bytes, big-endian).
     pub r: [u8; 32],
     /// S component (32 bytes, big-endian, low-S normalized).
@@ -149,26 +153,45 @@ pub struct Signature {
 }
 
 impl Signature {
-    /// Returns the signature as a 65-byte array (r || s || v).
-    pub fn to_bytes(&self) -> [u8; 65] {
-        let mut bytes = [0u8; 65];
+    /// Returns the signature as a 72-byte array (r[32] || s[32] || v[8] big-endian).
+    ///
+    /// The v field is serialized as 8 bytes big-endian to support large chain IDs.
+    pub fn to_bytes(&self) -> [u8; 72] {
+        let mut bytes = [0u8; 72];
         bytes[0..32].copy_from_slice(&self.r);
         bytes[32..64].copy_from_slice(&self.s);
-        bytes[64] = self.v;
+        bytes[64..72].copy_from_slice(&self.v.to_be_bytes());
         bytes
     }
 
-    /// Creates a signature from a 65-byte array (r || s || v).
-    pub fn from_bytes(bytes: &[u8; 65]) -> Self {
+    /// Creates a signature from a 72-byte array (r[32] || s[32] || v[8] big-endian).
+    pub fn from_bytes(bytes: &[u8; 72]) -> Self {
         let mut r = [0u8; 32];
         let mut s = [0u8; 32];
         r.copy_from_slice(&bytes[0..32]);
         s.copy_from_slice(&bytes[32..64]);
+        let mut v_bytes = [0u8; 8];
+        v_bytes.copy_from_slice(&bytes[64..72]);
         Self {
-            v: bytes[64],
+            v: u64::from_be_bytes(v_bytes),
             r,
             s,
         }
+    }
+
+    /// Returns the signature in legacy 65-byte format (r || s || v_byte).
+    ///
+    /// Only valid when v fits in a single byte (v <= 255).
+    /// Returns None if v exceeds u8 range.
+    pub fn to_bytes_legacy(&self) -> Option<[u8; 65]> {
+        if self.v > 255 {
+            return None;
+        }
+        let mut bytes = [0u8; 65];
+        bytes[0..32].copy_from_slice(&self.r);
+        bytes[32..64].copy_from_slice(&self.s);
+        bytes[64] = self.v as u8;
+        Some(bytes)
     }
 }
 
@@ -466,6 +489,35 @@ mod tests {
         let bytes = sig.to_bytes();
         let recovered = Signature::from_bytes(&bytes);
         assert_eq!(sig, recovered);
+    }
+
+    #[test]
+    fn test_signature_large_chain_id() {
+        // EIP-155 with chain_id = 56 (BSC): v = 56 * 2 + 35 + 0 = 147
+        let sig = Signature {
+            v: 147,
+            r: [1u8; 32],
+            s: [2u8; 32],
+        };
+        let bytes = sig.to_bytes();
+        let recovered = Signature::from_bytes(&bytes);
+        assert_eq!(sig, recovered);
+
+        // Legacy format should work for small v
+        assert!(sig.to_bytes_legacy().is_some());
+
+        // EIP-155 with large chain_id = 999999: v = 999999*2+35 = 2000033
+        let large_sig = Signature {
+            v: 2_000_033,
+            r: [3u8; 32],
+            s: [4u8; 32],
+        };
+        let large_bytes = large_sig.to_bytes();
+        let large_recovered = Signature::from_bytes(&large_bytes);
+        assert_eq!(large_sig, large_recovered);
+
+        // Legacy format should return None for large v
+        assert!(large_sig.to_bytes_legacy().is_none());
     }
 
     #[test]

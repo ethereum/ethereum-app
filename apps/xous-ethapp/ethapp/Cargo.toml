@@ -49,9 +49,6 @@ bip32 = { version = "0.5", default-features = false, features = ["secp256k1", "a
 # Hex encoding
 hex = { version = "0.4", default-features = false, features = ["alloc"] }
 
-# Random number generation for host builds
-getrandom = { version = "0.2", default-features = false, features = ["std"] }
-
 # Logging
 log = "0.4"
 
@@ -61,3 +58,9 @@ hex-literal = "0.4"
 [target.'cfg(target_os = "xous")'.dependencies]
 # Xous-specific dependencies that are only available on Xous target
 # These would include GAM, PDDB, TRNG connections
+# On Xous, randomness comes from the TRNG service, not getrandom.
+
+[target.'cfg(not(target_os = "xous"))'.dependencies]
+# getrandom with std feature is only used for host testing builds.
+# On Xous, the TRNG service provides randomness instead.
+getrandom = { version = "0.2", default-features = false, features = ["std"] }

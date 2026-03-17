@@ -337,12 +337,16 @@ impl EthAppClient {
     }
 
     /// Sends a memory message and receives a response.
+    ///
+    /// Uses `check_archived_root` for safe deserialization with validation,
+    /// preventing undefined behavior from malformed IPC responses.
     #[cfg(target_os = "xous")]
     fn send_receive_memory<T, R>(&self, op: EthAppOp, request: &T) -> Result<R, ApiError>
     where
         T: rkyv::Serialize<rkyv::ser::serializers::AllocSerializer<256>>,
         R: rkyv::Archive,
-        R::Archived: rkyv::Deserialize<R, rkyv::Infallible>,
+        R::Archived: rkyv::Deserialize<R, rkyv::Infallible>
+            + for<'a> rkyv::CheckBytes<rkyv::validation::validators::DefaultValidator<'a>>,
     {
         use rkyv::ser::Serializer;
 
@@ -386,8 +390,9 @@ impl EthAppClient {
             }
         }
 
-        // Deserialize the actual response
-        let archived = unsafe { rkyv::archived_root::<R>(response_bytes) };
+        // Deserialize the actual response with validation (safe, no unsafe)
+        let archived = rkyv::check_archived_root::<R>(response_bytes)
+            .map_err(|_| ApiError::DeserializationFailed("Archive validation failed".to_string()))?;
         let result: R = archived
             .deserialize(&mut rkyv::Infallible)
             .map_err(|_| ApiError::DeserializationFailed("Response deserialization failed".to_string()))?;
