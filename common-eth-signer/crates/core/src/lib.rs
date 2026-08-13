@@ -7,7 +7,7 @@ pub mod digest;
 pub mod error;
 pub mod request;
 
-pub use digest::{calldata_digest, eip712_digests};
+pub use digest::{calldata_digest, eip191_digest, eip712_digests};
 pub use error::{Result, SignerError};
 pub use request::{
     ChildNumber, DecodedTx, DerivationPath, MessageKind, PersonalMessage, SignRequest, TxDisplay,
