@@ -16,6 +16,8 @@ export enum SignTxState {
 export struct EthTxView {
     from: string,
     to: string,
+    // False for contract creation, where `to` is a plain label.
+    to-is-address: bool,
     chain-id: string,
     amount: string,
     max-fees: string,

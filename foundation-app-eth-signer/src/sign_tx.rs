@@ -140,15 +140,17 @@ fn build_tx_view(request: &SignRequest, signer: alloy_primitives::Address) -> Et
         _ => unreachable!("non-transaction request on the sign page"),
     };
 
-    let to = if tx.to == "(contract creation)" {
-        tr::lookup_id(TrId::SignTxContractCreation).to_string()
-    } else {
+    let to_is_address = tx.to.starts_with("0x");
+    let to = if to_is_address {
         tx.to
+    } else {
+        tr::lookup_id(TrId::SignTxContractCreation).to_string()
     };
 
     EthTxView {
         from: model.signer_address.into(),
         to: to.into(),
+        to_is_address,
         // The request-level chain id (the tx's own field may be absent on a
         // pre-EIP-155 legacy transaction).
         chain_id: model.chain_id.to_string().into(),

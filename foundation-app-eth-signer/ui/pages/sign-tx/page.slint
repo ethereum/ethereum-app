@@ -2,75 +2,160 @@
 // SPDX-License-Identifier: MIT
 
 // Ethereum transaction signing, following the Bitcoin app's sign-psbt page:
-// a confirmation card (From/To/ChainId/Amount/Max Fees), a data warning with
-// a second swipeable card carrying the ERC-8213 calldata digest + its QR,
-// the slide-to-sign control, and a signature-QR success page.
+// swipeable LineCards with bold section titles and inset CardFields holding
+// chunked, colour-alternating addresses (the explore-addresses style).
+//
+// Card 1: From / To / Amount. Card 2: Max Fees / Chain ID. Card 3 (only with
+// calldata): the ERC-8213 data hash, chunked the same way, plus its QR.
 
-import { NavHeader, BasePage, TextSm, TextMd, Button, SlideToButton, PageBody, ContentSection, ButtonSection, JumboIconPageBody, TimerCircularProgress, HeadingMd, WrappedIcon, QrCodeCard, LineCard, Pagination, Icon } from "../../compat/widgets.slint";
+import { NavHeader, BasePage, TextSm, TextMd, TextLg, Button, SlideToButton, PageBody, ContentSection, ButtonSection, JumboIconPageBody, TimerCircularProgress, HeadingMd, WrappedIcon, QrCodeCard, Qrcode, LineCard, Pagination, Icon, CardField, BtcAddress } from "../../compat/widgets.slint";
 import { Palette, Size, Importance, CardColor } from "../../compat/theme.slint";
+import { LightPalette } from "../../compat/palettes/light-palette.slint";
 import { TR2, TrId } from "../../gen/tr.slint";
 
 import { SignTxProps } from "./props.slint";
 import { SignTx, SignTxState, EthTxView } from "../../sign-tx.slint";
 import { Navigate } from "../../gen/navigate.slint";
 
-component TxField inherits VerticalLayout {
-    in property <string> label;
+component CardSectionTitle inherits HorizontalLayout {
+    padding-left: Size.sz2;
+    padding-right: Size.sz2;
+    padding-top: Size.sz0_75;
+    padding-bottom: Size.sz0_75;
+    alignment: space-between;
+}
+
+component TitleText inherits TextMd {
+    color: LightPalette.content-primary-inverse;
+    bold: true;
+}
+
+// A chunked hex string (address or hash) in an inset field, explore-addresses
+// style: blocks of 4 with alternating colours.
+component HexField inherits CardField {
     in property <string> value;
+    in property <length> field-height: Size.sz15;
 
-    spacing: Size.sz0_5;
+    height: field-height;
 
-    TextSm {
-        text: label;
-        color: Palette.white.transparentize(0.4);
-    }
+    VerticalLayout {
+        alignment: center;
+        padding-left: Size.sz2;
+        padding-right: Size.sz2;
 
-    TextMd {
-        text: value;
-        color: Palette.white;
-        wrap: word-wrap;
+        BtcAddress {
+            section-spacing: Size.sz0_5;
+            horizontal-alignment: start;
+            address: value;
+            items-per-row: 8;
+        }
     }
 }
 
-component TxInfoCard inherits LineCard {
+component TxMainCard inherits LineCard {
     in property <EthTxView> tx;
 
     card-color: CardColor.blue;
     width: 448px;
-    height: 388px;
+    height: 340px;
 
     VerticalLayout {
         alignment: start;
-        spacing: Size.sz2;
-        padding: Size.sz4;
+        spacing: Size.sz2_5;
+        padding: Size.sz2;
 
-        TxField {
-            label: TR2.lookup(TrId.SignTxFrom);
+        CardSectionTitle {
+            TitleText {
+                text: TR2.lookup(TrId.SignTxFrom);
+            }
+        }
+
+        HexField {
             value: tx.from;
         }
 
-        TxField {
-            label: TR2.lookup(TrId.SignTxTo);
+        CardSectionTitle {
+            TitleText {
+                text: TR2.lookup(TrId.SignTxTo);
+            }
+        }
+
+        if tx.to-is-address: HexField {
             value: tx.to;
         }
 
-        HorizontalLayout {
-            spacing: Size.sz8;
+        if !tx.to-is-address: CardField {
+            height: Size.sz15;
 
-            TxField {
-                label: TR2.lookup(TrId.SignTxChainId);
-                value: tx.chain-id;
-            }
+            VerticalLayout {
+                alignment: center;
+                padding-left: Size.sz2;
+                padding-right: Size.sz2;
 
-            TxField {
-                label: TR2.lookup(TrId.SignTxAmount);
-                value: tx.amount;
+                TextSm {
+                    text: tx.to;
+                    color: Palette.content-primary;
+                }
             }
         }
 
-        TxField {
-            label: TR2.lookup(TrId.SignTxMaxFees);
-            value: tx.max-fees;
+        CardSectionTitle {
+            TitleText {
+                text: TR2.lookup(TrId.SignTxAmount);
+            }
+        }
+
+        HorizontalLayout {
+            padding-left: Size.sz2;
+
+            TextLg {
+                text: tx.amount;
+                color: LightPalette.content-primary-inverse;
+            }
+        }
+    }
+}
+
+component TxFeesCard inherits LineCard {
+    in property <EthTxView> tx;
+
+    card-color: CardColor.blue;
+    width: 448px;
+    height: 340px;
+
+    VerticalLayout {
+        alignment: start;
+        spacing: Size.sz2_5;
+        padding: Size.sz2;
+
+        CardSectionTitle {
+            TitleText {
+                text: TR2.lookup(TrId.SignTxMaxFees);
+            }
+        }
+
+        HorizontalLayout {
+            padding-left: Size.sz2;
+
+            TextLg {
+                text: tx.max-fees;
+                color: LightPalette.content-primary-inverse;
+            }
+        }
+
+        CardSectionTitle {
+            TitleText {
+                text: TR2.lookup(TrId.SignTxChainId);
+            }
+        }
+
+        HorizontalLayout {
+            padding-left: Size.sz2;
+
+            TextLg {
+                text: tx.chain-id;
+                color: LightPalette.content-primary-inverse;
+            }
         }
     }
 }
@@ -80,31 +165,41 @@ component DataHashCard inherits LineCard {
 
     card-color: CardColor.dark-grey;
     width: 448px;
-    height: 388px;
+    height: 340px;
 
     VerticalLayout {
         alignment: start;
-        spacing: Size.sz2;
-        padding: Size.sz4;
+        spacing: Size.sz2_5;
+        padding: Size.sz2;
 
-        TextMd {
-            text: TR2.lookup(TrId.SignTxDataHashTitle);
-            color: Palette.white;
+        CardSectionTitle {
+            TitleText {
+                text: TR2.lookup(TrId.SignTxDataHashTitle);
+            }
         }
 
-        TextSm {
-            text: tx.data-digest;
-            color: Palette.white.transparentize(0.2);
-            wrap: char-wrap;
+        HexField {
+            value: tx.data-digest;
+            // 17 blocks of 4 -> three rows.
+            field-height: Size.sz15 + Size.sz6;
         }
 
         HorizontalLayout {
             alignment: center;
 
-            QrCodeCard {
-                data: tx.data-digest;
-                width: 200px;
-                height: 200px;
+            // A white plate with a >=12px quiet zone; never scale or clip the
+            // QR image itself or the finder patterns break.
+            Rectangle {
+                width: 196px;
+                height: 196px;
+                background: Palette.white;
+                border-radius: Size.sz2;
+
+                Qrcode {
+                    width: 172px;
+                    height: 172px;
+                    data: tx.data-digest;
+                }
             }
         }
     }
@@ -160,32 +255,33 @@ component SignPage inherits VerticalLayout {
                 }
             }
 
-            // With calldata: swipe between the transaction card and the
-            // ERC-8213 data-hash card.
-            if tx.has-data: Pagination {
-                total-pages: 2;
-                height: 408px;
+            Pagination {
+                total-pages: tx.has-data ? 3 : 2;
+                height: 366px;
                 width: 448px;
                 page-spacing: Size.sz2_5;
                 dots-padding-top: Size.sz2;
 
                 VerticalLayout {
                     width: 448px;
-                    TxInfoCard {
+                    TxMainCard {
                         tx: tx;
                     }
                 }
 
                 VerticalLayout {
                     width: 448px;
+                    TxFeesCard {
+                        tx: tx;
+                    }
+                }
+
+                if tx.has-data: VerticalLayout {
+                    width: 448px;
                     DataHashCard {
                         tx: tx;
                     }
                 }
-            }
-
-            if !tx.has-data: TxInfoCard {
-                tx: tx;
             }
         }
 
