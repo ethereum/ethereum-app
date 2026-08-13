@@ -1,0 +1,24 @@
+// SPDX-FileCopyrightText: 2025 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+export struct CreateSingleSigOptions {
+    label: string,
+}
+
+export enum CreateAccountState {
+    Idle,
+    Creating,
+    Success,
+    Error,
+}
+
+export global CreateAccount {
+    in property <CreateAccountState> state: CreateAccountState.Idle;
+
+    in property <string> new-account-id;
+
+    callback create-single-sig(CreateSingleSigOptions);
+
+    callback validate-new-label(string) -> string;
+    callback update-account-name(account-id: string, name: string);
+}

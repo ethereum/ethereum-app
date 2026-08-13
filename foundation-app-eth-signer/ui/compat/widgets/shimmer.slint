@@ -1,0 +1,61 @@
+// SPDX-FileCopyrightText: 2025 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import {Images, Size, UISize, CurrentTheme, Palettes} from "../theme.slint";
+
+export component Shimmer inherits Rectangle {
+    clip: true; // Apply clip because the shimmer gradient can move outside the bounds of the rectangle
+
+    in property <brush> base-color: white;
+    in property <int> num-steps: 10;
+    in property <duration> duration: 0.5s;
+    in property <bool> active: true;
+    in property <float> dead-zone: 0%;
+    in property <int> starting-step: 0;
+
+    property <duration> interval: duration / num-steps;
+    property <length> step-size: (2 * root.width) / num-steps;
+    property <int> step: Math.mod(starting-step, root.num-steps);
+    property <length> x-pos: 0px;
+
+    changed active => {
+        step = 0;
+        x-pos = 0px;
+    }
+
+    @children
+
+    effect := Rectangle {
+        clip: true;
+        visible: root.active;
+        x: -self.width + x-pos;
+        width: parent.width * 0.3;
+        background: @linear-gradient(90deg, base-color.transparentize(100%) 0%, base-color.transparentize(20%) 34%, base-color.transparentize(20%) 66%, base-color.transparentize(100%) 100%);
+        opacity: get-opacity(dead-zone, 50%) * 80%;
+    }
+
+    Timer {
+        interval: root.interval;
+        running: active;
+
+        triggered() => {
+            x-pos = floor((step * root.step-size) / 1px) * 1px;
+            step = Math.mod(step + 1, root.num-steps);
+        }
+    }
+
+    function get-opacity(dead-zone: float, threshold: float) -> float {
+        if (step < root.num-steps * dead-zone) {
+            return 0.0;
+        } else if (step > root.num-steps * (1.0 - dead-zone)) {
+            return 0.0;
+        }
+        if (step < root.num-steps * threshold) {
+            return step / (root.num-steps * threshold);
+        } else if (step > root.num-steps * (1.0 - threshold)) {
+            return (root.num-steps - step) / (root.num-steps * threshold);
+        } else {
+            return 1.0;
+        }
+    }
+}

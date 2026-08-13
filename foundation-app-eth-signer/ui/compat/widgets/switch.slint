@@ -1,0 +1,139 @@
+// SPDX-FileCopyrightText: 2023 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import {Palette, Size, UISize, Timings} from "../theme.slint";
+import {UIGradients} from "../palettes/ui-colors.slint";
+import {Circle} from "circle.slint";
+import {Icon} from "icon.slint";
+import {VerticalBox} from "std-widgets.slint";
+import {ScaledTouch} from "scaled-touch.slint";
+
+export component Switch inherits Rectangle {
+    // Override inherited properties
+    width: Size.sz14;
+    height: Size.sz7;
+
+    // Private properties
+    private property <brush> bg-color: checked ? Palette.content-brand : Palette.content-secondary-inverse;
+    private property <brush> bg-brush: indeterminate ? UIGradients.switch-indeterminate : bg-color;
+    private property <length> knob-size: root.height - (Size.sz0_5 * 2);
+
+    // Public properties
+    in property <string> id;
+    in property <string> indeterminate_icon;
+    in property <bool> enabled: true;
+    in property <brush> knob-color: Palette.background-primary;
+    in-out property <bool> checked: false;
+    in-out property <bool> indeterminate: false;
+    in property <float> touch-factor: 2.5;
+
+    // Callbacks
+    callback changed;
+
+    bg-el := Rectangle {
+        background: bg-brush;
+        border-radius: root.height / 2;
+        clip: true;
+
+        animate background {
+            duration: Timings.prop-change;
+            easing: ease-in-out;
+        }
+
+        VerticalLayout {
+            alignment: center;
+
+            Circle {
+                x: indeterminate ? root.width / 2 - knob-size / 2 : (checked ? root.width - knob-size - Size.sz0_5 : Size.sz0_5);
+                size: knob-size;
+                background: enabled ? knob-color : knob-color.transparentize(0.5);
+
+                animate x { duration: Timings.prop-change; }
+
+                HorizontalLayout {
+                    alignment: center;
+                    VerticalLayout {
+                        alignment: center;
+                        if indeterminate_icon != "": Icon {
+                            name: indeterminate_icon;
+                            color: Palette.content-brand;
+                            opacity: indeterminate ? 1 : 0;
+                            size: Size.sz4;
+
+                            animate opacity { duration: Timings.prop-change; }
+                            states [
+                                disabled when !root.enabled: {
+                                    color: bg-color.mix(Palette.white, 0.5);
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    ScaledTouch {
+        enabled: root.enabled;
+        touch-factor: root.touch-factor;
+        clicked => {
+            if (indeterminate) {
+                root.indeterminate = false;
+            } else {
+                root.checked = !root.checked;
+            }
+            root.changed();
+        }
+    }
+}
+
+export component SwitchControlled inherits Rectangle {
+    // Override inherited properties
+    width: Size.sz14;
+    height: Size.sz7;
+
+    // Private properties
+    private property <brush> bg-color: checked ? Palette.content-brand : Palette.content-secondary-inverse;
+    private property <length> knob-size: root.height - (Size.sz0_5 * 2);
+
+    // Public properties
+    in property <string> id;
+    in property <bool> enabled: true;
+    in property <brush> knob-color: Palette.background-primary;
+    in property <bool> checked: false;
+    in property <float> touch-factor: 2.5;
+
+    // Callbacks
+    callback changed(bool);
+
+    bg-el := Rectangle {
+        background: bg-color;
+        border-radius: root.height / 2;
+        clip: true;
+
+        animate background {
+            duration: Timings.prop-change;
+            easing: ease-in-out;
+        }
+
+        VerticalLayout {
+            alignment: center;
+
+            Circle {
+                x: checked ? root.width - knob-size - Size.sz0_5 : Size.sz0_5;
+                size: knob-size;
+                background: enabled ? knob-color : knob-color.transparentize(0.5);
+
+                animate x { duration: Timings.prop-change; }
+            }
+        }
+    }
+
+    ScaledTouch {
+        enabled: root.enabled;
+        touch-factor: root.touch-factor;
+        clicked => {
+            root.changed(!root.checked);
+        }
+    }
+}

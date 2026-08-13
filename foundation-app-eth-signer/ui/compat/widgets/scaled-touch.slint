@@ -1,0 +1,41 @@
+// SPDX-FileCopyrightText: 2025 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+export component ScaledTouch inherits Rectangle {
+    // Public properties
+    in property <bool> enabled: true;
+    in property <float> touch-factor: 2.5;
+    in property <bool> scale-horizontal: true;
+
+    // Callbacks
+    callback clicked();
+    callback pointer-event(PointerEvent);
+
+    out property <bool> pressed: touchArea.pressed;
+
+    // Since the touch area is touch-factor * height, the offset
+    // removes 1 * height and splits the remaining length
+    // ((touch-factor - 1) * height) => (touch-factor * height - height)
+    // between two sides by multiplying by -1/2
+    // -(touch-factor * height - height) / 2 =>
+    property <length> t-offset: (-touch-factor * self.height + self.height) / 2;
+    property <length> t-height: self.height * touch-factor;
+    property <length> t-width: scale-horizontal ? self.width + 2 * -t-offset : self.width;
+    property <length> t-x: scale-horizontal ? t-offset : 0px;
+
+    touchArea := TouchArea {
+        x: t-x;
+        y: t-offset;
+        width: t-width;
+        height: t-height;
+        enabled: root.enabled;
+
+        clicked => {
+            root.clicked();
+        }
+
+        pointer-event(e) => {
+            root.pointer-event(e);
+        }
+    }
+}

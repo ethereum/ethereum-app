@@ -1,0 +1,81 @@
+// SPDX-FileCopyrightText: 2024 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { Palette, Images } from "../theme.slint";
+
+export component KeyCardAnimation inherits Rectangle {
+    // Drive the animation with an internal timer. The timer flips the `at-center`
+    // flag every 1.5 s, causing a state change and therefore a single animated
+    // transition. No continuous per-frame updates are performed.
+    in property <bool> running: true;
+    in property <duration> tick-duration: 1500ms;
+    in property <duration> animation-duration: 500ms;
+
+    in property <length> keycard-y-offset: 10px;
+    in property <length> side-padding: 64px;
+
+    property <bool> at-center: false;
+
+    width: 424px;
+    height: 184px;
+
+    prime := Image {
+        property <length> size: 128px;
+        source: Images.icon("device", size);
+        height: size;
+        width: size;
+        colorize: Palette.content-primary;
+        animate x {
+            duration: animation-duration;
+            easing: ease-in-out-back;
+        }
+    }
+
+    keycard := Image {
+        property <length> size: 104px;
+        source: Images.icon("nfc-1-card-horiz", size);
+        colorize: Palette.content-primary;
+        height: size;
+        width: size;
+        y: prime.y + root.keycard-y-offset;
+
+        animate x {
+            duration: animation-duration;
+            easing: ease-in-out-back;
+        }
+        animate y {
+            duration: animation-duration;
+            easing: ease-in-out-back;
+        }
+
+        animate opacity {
+            duration: animation-duration;
+            easing: ease-in-out;
+        }
+    }
+
+    // State-based animation. The transition only runs when `at-center` toggles,
+    // eliminating the need for a continuously ticking geometry update.
+    states [
+        center when root.at-center: {
+            prime.x: self.width / 2 - prime.width / 2;
+            keycard.x: self.width / 2 - keycard.width / 2;
+            keycard.y: prime.y - root.keycard-y-offset;
+            keycard.opacity: 0.3;
+        }
+        edges when !root.at-center: {
+            prime.x: self.width - prime.width - root.side-padding;
+            keycard.x: root.side-padding;
+            keycard.opacity: 1.0;
+        }
+    ]
+
+    // Timer that flips `at-center` while `running` is true.
+    animation_timer := Timer {
+        interval: tick-duration;
+        running: running;
+        triggered() => {
+            root.at-center = !root.at-center;
+        }
+    }
+}

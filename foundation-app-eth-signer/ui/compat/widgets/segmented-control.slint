@@ -1,0 +1,132 @@
+// SPDX-FileCopyrightText: 2023 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import {Palette, Size, CurrentTheme} from "../theme.slint";
+
+import {Icon} from "./icon.slint";
+import {TextLg} from "./txt.slint";
+import {ScaledTouch} from "scaled-touch.slint";
+
+// A text-only segmented selector - no animation
+export component SegmentedControl inherits Rectangle {
+    // Override inherited properties
+    border-radius: Size.sz13 / 2;
+    height: Size.sz13;
+
+    // Public properties
+    in property <string> id;
+    in property <[string]> labels;
+    in property <[string]> icons;
+    in-out property <int> selected_index: 0;
+    in property <bool> enabled: true;
+    in property <float> touch-factor: 1.0;
+
+    // Private properties
+    private property <bool> is_pressed: false;
+    private property <brush> bg_color: get-segment-bg-color(selected_index);
+    private property <int> pressed-segment: -1;
+
+    // Callbacks
+    callback changed(string, int);
+
+    // Helper functions
+    function get-segment-bg-color(index: int) -> brush {
+        // Not selected
+        if (selected_index != index) {
+            return Palette.transparent;
+        }
+
+        // Disabled
+        if (!enabled) {
+            return Palette.background-brand-disabled;
+        }
+
+        // Normal
+        return Palette.background-brand;
+    }
+
+    function get-text-color(index: int) -> brush {
+        if (selected_index == index) {
+            return Palette.content-button;
+        } else {
+            return Palette.content-secondary;
+        }
+    }
+
+    // Visual layer: clips content to the pill shape
+    Rectangle {
+        background: Palette.background-primary-alternative;
+        border-radius: parent.border-radius;
+        clip: true;
+        width: 100%;
+        height: 100%;
+
+        HorizontalLayout {
+            padding: Size.sz1;
+
+            for label[index] in labels: Rectangle {
+                border-radius: Size.sz6;
+                background: (root.pressed-segment == index && root.selected_index != index) ? Palette.background-pressed : Palette.transparent;
+
+                HorizontalLayout {
+                    VerticalLayout {
+                        Rectangle {
+                            width: 100%;
+                            height: 100%;
+                            background: get-segment-bg-color(index);
+                            border-radius: Size.sz6;
+
+                            VerticalLayout {
+                                alignment: center;
+
+                                HorizontalLayout {
+                                    alignment: center;
+                                    spacing: Size.sz2;
+
+                                    if (index < icons.length && icons[index] != ""): VerticalLayout {
+                                        alignment: center;
+                                        Icon {
+                                            width: 24px;
+                                            name: icons[index];
+                                            color: get-text-color(index);
+                                        }
+                                    }
+
+                                    TextLg {
+                                        text: label;
+                                        color: get-text-color(index);
+                                        bold: true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Touch layer: overlaid with no clip so touch areas extend beyond the pill
+    HorizontalLayout {
+        padding: Size.sz1;
+
+        for label[index] in labels: ScaledTouch {
+            enabled: root.enabled;
+            touch-factor: root.touch-factor;
+            scale-horizontal: false;
+            clicked => {
+                root.selected_index = index;
+                root.changed(root.id, index);
+            }
+            pointer-event(e) => {
+                if (e.kind == PointerEventKind.down) {
+                    root.pressed-segment = index;
+                    root.is_pressed = true;
+                } else if (e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel) {
+                    root.pressed-segment = -1;
+                    root.is_pressed = false;
+                }
+            }
+        }
+    }
+}

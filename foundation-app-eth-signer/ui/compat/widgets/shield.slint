@@ -1,0 +1,53 @@
+// SPDX-FileCopyrightText: 2023 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import {Images, Size, UISize, CurrentTheme, Palettes, CompatImages} from "../theme.slint";
+
+
+export component Shield inherits Rectangle {
+    width: UISize.screen-width - 10px;
+    clip: false; // This allows the shadows of the image to spill past the bounding box.
+
+    in property <bool> mask: true;
+
+    private property <length> SHADOW_SIZE_TOP: Size.sz2;
+    private property <length> SHADOW_SIZE_BOTTOM: Size.sz6;
+    private property <length> SHADOW_SIZE_HORIZ: Size.sz4;
+
+    property <bool> at-top: flickable.viewport-y == 0;
+    property <bool> at-bottom: -flickable.viewport-y + flickable.height >= flickable.viewport-height;
+
+    Image {
+        y: -SHADOW_SIZE_TOP;
+        x: -SHADOW_SIZE_HORIZ;
+        width: parent.width + SHADOW_SIZE_HORIZ * 2;
+        height: parent.height + SHADOW_SIZE_TOP + SHADOW_SIZE_BOTTOM;
+        source: CompatImages.nine-slice(CurrentTheme.palette == Palettes.dark ? "images/shield-bg-dark" : "images/shield-bg");
+        image-fit: contain;
+    }
+
+    // Scrollable content
+    flickable := Flickable {
+        y: Size.sz6;
+        height: root.height - Size.sz6 - Size.sz8;
+        width: parent.width;
+        viewport-width: self.width;
+        @children
+    }
+
+    // Top alpha mask
+    if mask && !at-top: Image {
+        width: 470px;
+        height: 50px;
+        y: 0px;
+        source: CompatImages.common("images/shield-top-alpha-mask");
+    }
+
+    // Bottom alpha mask
+    if mask && !at-bottom: Image {
+        width: 468px;
+        height: 100px;
+        y: parent.height - 100px;
+        source: CompatImages.common("images/shield-bottom-alpha-mask");
+    }
+}

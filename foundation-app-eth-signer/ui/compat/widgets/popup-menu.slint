@@ -1,0 +1,91 @@
+// SPDX-FileCopyrightText: 2024 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { Panel } from "./panel.slint";
+import { Icon } from "./icon.slint";
+import { TextSm, TextMd } from "./txt.slint";
+import { Divider } from "./divider.slint";
+import { Button } from "./button.slint";
+import { Palette, Size, UISize, Importance } from "../theme.slint";
+import { CrossLayout } from "../widgets/cross-layout.slint";
+
+export component PopupMenuItem inherits Rectangle {
+    in property <string> label;
+    in property <string> icon;
+    in property <string> left-icon;
+    in property <bool> left-icon-reserve;
+    in property <color> text_color: Palette.content-primary;
+    in property <bool> enabled: true;
+    in property <bool> first: false;
+    in property <bool> last: false;
+    in property <bool> divider: !last;
+    callback clicked;
+
+    height: Size.sz16;
+
+    HorizontalLayout {
+        height: parent.height;
+        callback selected(int);
+        spacing: Size.sz4;
+        padding: Size.sz4;
+
+        if left-icon != "": VerticalLayout {
+            alignment: center;
+            Icon {
+                name: left-icon;
+                color: enabled ? text_color : Palette.content-tertiary;
+            }
+        }
+
+        if left-icon-reserve && left-icon == "": Rectangle {
+            width: Size.sz6;
+            height: Size.sz6;
+        }
+
+        TextMd {
+            text: label;
+            color: enabled ? text_color : Palette.content-tertiary;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+
+        if icon != "": VerticalLayout {
+            alignment: center;
+            Icon {
+                name: icon;
+                color: enabled ? text_color : Palette.content-tertiary;
+            }
+        }
+    }
+
+    touch := TouchArea {
+        enabled: parent.enabled;
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    border-top-left-radius: first ? Size.sz6 : 0;
+    border-top-right-radius: first ? Size.sz6 : 0;
+    border-bottom-left-radius: last ? Size.sz6 : 0;
+    border-bottom-right-radius: last ? Size.sz6 : 0;
+
+    if !last: Divider {
+        y: parent.height - self.height;
+    }
+
+    states [
+        pressed when touch.pressed: {
+            root.background: Palette.background-disabled;
+        }
+    ]
+}
+
+export component PopupMenu inherits Panel {
+    width: UISize.popup-menu-width;
+    level: 3;
+    VerticalLayout {
+        spacing: 0;
+        @children
+    }
+}

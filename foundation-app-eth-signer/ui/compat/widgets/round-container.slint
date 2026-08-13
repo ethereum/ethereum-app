@@ -1,0 +1,15 @@
+// SPDX-FileCopyrightText: 2023 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import {Palette, Size} from "../theme.slint";
+
+export component RoundContainer inherits Rectangle {
+    // Override inherited properties
+    border-radius: Size.sz6;
+    background: Palette.background-primary;
+    drop-shadow-blur: Size.sz2;
+    drop-shadow-color: Palette.black.transparentize(0.9);
+    clip: true;
+
+    @children
+}

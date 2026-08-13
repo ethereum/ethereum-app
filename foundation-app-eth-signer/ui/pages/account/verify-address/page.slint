@@ -1,0 +1,250 @@
+// SPDX-FileCopyrightText: 2025 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+ 
+import { BasePage, ButtonSection, ContentSection, TextLg, TextSm, Button, HeadingMd, TextMd, WrappedIcon, HeadingSm, BtcAddress, TimerCircularProgress, PageBody, JumboIconPageBody } from "../../../compat/widgets.slint";
+import { TR2, TrId } from "../../../gen/tr.slint";
+import { Size, Importance, Palette } from "../../../compat/theme.slint";
+
+import { Navigate, Animate } from "../../../gen/navigate.slint";
+
+import { AccountProps } from "../../account/props.slint";
+import { VerifyAddressProps } from "./props.slint";
+import { VerifyAddress, VerifyAddressState } from "../../../verify-address.slint";
+
+component LabeledText inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> text;
+
+    alignment: center;
+    spacing: 10px;
+
+    TextSm {
+        text: label;
+        color: Palette.content-tertiary;
+        vertical-alignment: center;
+    }
+
+    TextSm {
+        text: text;
+        vertical-alignment: center;
+    }
+}
+
+component LoadingPage inherits JumboIconPageBody {
+    ContentSection {
+        HorizontalLayout {
+            alignment: center;
+            TimerCircularProgress {
+                indeterminate: true;
+            }
+        }
+
+        HeadingMd {
+            text: TR2.lookup(TrId.VerifyAddressLoadingTitle);
+            horizontal-alignment: center;
+        }
+
+        TextMd {
+            text: TR2.lookup(TrId.VerifyAddressLoadingContent);
+            horizontal-alignment: center;
+        }
+    }
+
+    ButtonSection {
+        Button {
+            label: TR2.lookup(TrId.CommonButtonCancel);
+            importance: Importance.secondary;
+            clicked => {
+                Navigate.backward-animate(Animate.None);
+            }
+        }
+    }
+}
+
+component SuccessPage inherits JumboIconPageBody {
+    ContentSection {
+        HorizontalLayout {
+            alignment: center;
+            WrappedIcon {
+                name: "jumbo-circle";
+                inner-icon: "check";
+            }
+        }
+
+        HeadingMd {
+            text: TR2.lookup(TrId.VerifyAddressSuccessTitle);
+            horizontal-alignment: center;
+        }
+
+        BtcAddress {
+            address: VerifyAddress.address;
+        }
+
+        LabeledText {
+            label: TR2.lookup(TrId.VerifyAddressSuccessReceiveAddress);
+            text: VerifyAddress.index;
+        }
+    }
+
+    ButtonSection {
+        Button {
+            importance: Importance.primary;
+            label: TR2.lookup(TrId.CommonButtonDone);
+            clicked => {
+                Navigate.return-home();
+            }
+        }
+    }
+}
+
+component ErrorPage inherits JumboIconPageBody {
+    in property <string> account-id;
+
+    ContentSection {
+        HorizontalLayout {
+            alignment: center;
+            WrappedIcon {
+                name: "jumbo-circle";
+                inner-icon: "close";
+            }
+        }
+
+        VerticalLayout {
+            spacing: Size.sz5;
+            HeadingMd {
+                text: TR2.lookup(TrId.VerifyAddressFailedTitle);
+                horizontal-alignment: center;
+            }
+
+            TextMd {
+                text: TR2.lookup(TrId.VerifyAddressFailedContent);
+                horizontal-alignment: center;
+            }
+        }
+
+        VerticalLayout {
+            spacing: Size.sz2;
+            HeadingSm {
+                text: TR2.lookup(TrId.VerifyAddressFailedRangesChecked);
+                horizontal-alignment: center;
+            }
+
+            LabeledText {
+                label: TR2.lookup(TrId.VerifyAddressSuccessReceiveAddresses);
+                text: "\{VerifyAddress.checked-ranges.receive-start} - \{VerifyAddress.checked-ranges.receive-end}";
+            }
+        }
+    }
+
+    ButtonSection {
+        Button {
+            importance: Importance.secondary;
+            label: TR2.lookup(TrId.CommonButtonSkipVerification);
+            clicked => {
+                Navigate.return-home();
+            }
+        }
+
+        Button {
+            importance: Importance.primary;
+            label: TR2.lookup(TrId.VerifyAddressFailedContinueSearching);
+            clicked => {
+                VerifyAddress.continue-verify-address({
+                    account-id: account-id,
+                    show-skip-button: false,
+                    show-view-all: true,
+                },
+                VerifyAddress.address,
+                VerifyAddress.attempt-number + 1);
+            }
+        }
+    }
+}
+
+component InvalidPage inherits JumboIconPageBody {
+    ContentSection {
+        HorizontalLayout {
+            alignment: center;
+            WrappedIcon {
+                name: "jumbo-circle";
+                inner-icon: "close";
+            }
+        }
+
+        VerticalLayout {
+            spacing: Size.sz5;
+            HeadingMd {
+                text: TR2.lookup(TrId.InvalidAddressTitle);
+                horizontal-alignment: center;
+            }
+
+            TextMd {
+                text: TR2.lookup(TrId.InvalidAddressContent);
+                horizontal-alignment: center;
+                color: Palette.content-secondary;
+            }
+        }
+    }
+
+    ButtonSection {
+        Button {
+            importance: Importance.primary;
+            label: TR2.lookup(TrId.CommonButtonRetry);
+            clicked => {
+                Navigate.backward-animate(Animate.None);
+            }
+        }
+    }
+}
+
+component SkipPage inherits JumboIconPageBody {
+    ContentSection {
+        HorizontalLayout {
+            alignment: center;
+            WrappedIcon {
+                name: "jumbo-circle";
+                inner-icon: "alert";
+            }
+        }
+
+        HeadingMd {
+            text: TR2.lookup(TrId.VerifyAddressSkipVerificationTitle);
+            horizontal-alignment: center;
+        }
+
+        TextMd {
+            text: TR2.lookup(TrId.VerifyAddressSkipVerificationContent);
+            horizontal-alignment: center;
+        }
+    }
+
+    ButtonSection {
+        Button {
+            label: TR2.lookup(TrId.CommonButtonSkipVerification);
+            importance: Importance.secondary;
+            clicked => {
+                Navigate.return-home();
+            }
+        }
+
+        Button {
+            label: TR2.lookup(TrId.CommonButtonBack);
+            clicked => {
+                Navigate.backward();
+            }
+        }
+    }
+}
+
+export component VerifyAddressPage inherits BasePage {
+    in property <AccountProps> acct-props;
+    in property <VerifyAddressProps> props;
+
+    if VerifyAddress.state == VerifyAddressState.Loading: LoadingPage { }
+    if VerifyAddress.state == VerifyAddressState.Success: SuccessPage { }
+    if VerifyAddress.state == VerifyAddressState.Error: ErrorPage {
+        account-id: acct-props.account-id;
+    }
+    if VerifyAddress.state == VerifyAddressState.Invalid: InvalidPage { }
+    if VerifyAddress.state == VerifyAddressState.Skipped: SkipPage { }
+}

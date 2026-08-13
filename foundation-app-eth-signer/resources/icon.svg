@@ -1,0 +1,12 @@
+<svg width="110" height="110" viewBox="0 0 110 110" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Ethereum glyph on a fully transparent background; the launcher renders
+       this 1:1 into a 110x110 slot on its own badge plate. -->
+  <g transform="translate(24.28 5) scale(0.24)">
+    <path d="M127.9 0l-2.8 9.5v275.7l2.8 2.8 127.9-75.6z" fill="#C7CFDA"/>
+    <path d="M127.9 0L0 212.3l127.9 75.6V0z" fill="#EDF1F6"/>
+    <path d="M127.9 312.2l-1.6 1.9v98.2l1.6 4.6 128-180.3z" fill="#C7CFDA"/>
+    <path d="M127.9 417v-104.8L0 236.6z" fill="#EDF1F6"/>
+    <path d="M127.9 287.9l127.9-75.6-127.9-58.1z" fill="#9AA6B6"/>
+    <path d="M0 212.3l127.9 75.6v-133.7z" fill="#B4BECB"/>
+  </g>
+</svg>

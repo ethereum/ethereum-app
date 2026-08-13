@@ -1,0 +1,256 @@
+// SPDX-FileCopyrightText: 2024 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import {Linecap, GradientDirection, GradientStop, Importance, CardColor} from "./types.slint";
+import {UIColors} from "./palettes/ui-colors.slint";
+
+export global Utils {
+    pure callback color-to-hex(color) -> string;
+
+    pure callback percent-to-string(percent, int) -> string;
+    pure callback string-to-percent(string) -> percent;
+
+    // pure callback schedule-callback(function, duration, bool) -> bool;
+    pure callback qrcode(string, color, color) -> image;
+    // parameters: ur_type, data, density
+    pure callback qrcode-parts(string, string, int) -> [string];
+
+    // parameters: array of strings, seed
+    // return value: index of seed in array or -1 if not found
+    pure callback index-of([string], string) -> int;
+
+    // returns the length of a string
+    pure callback string-length(string) -> int;
+
+    // ISO-4217 currency code → display glyph (e.g. "EUR" → "€"). Empty string for unknown codes.
+    pure callback currency-symbol(string) -> string;
+
+    // parameters: string_to_split, delimeter
+    // return value: array of strings
+    pure callback split(string, string) -> [string];
+
+    // parameters: string, length of each string
+    pure callback split-by-length(string, int) -> [string];
+
+    // parameters: strings to join, delimeter
+    // return value: strings
+    pure callback join([string], string) -> string;
+
+    // parameters:
+    // width, height, angle-start, angle-end, thikness, color
+    pure callback arc(length, length, float, float, float, color) -> image;
+
+    // width, height, border-radius,border-dash, gradient-direction, gradient-stops, border-width, border-color
+    pure callback frame(length, length, length, [float], GradientDirection, [GradientStop], length, color) -> image;
+
+    // width, height, border-radius, gradient-start, gradient-end, border-width, border-color
+    pure callback panel(length, length, length, color, color, length, color) -> image;
+
+    // width, height, background-color, background-gradient, border-radius, border-width, border-gradient, template
+    pure callback line-card(length, length, color, [GradientStop], length, length, [GradientStop], length, [GradientStop], string) -> image;
+
+    // params:  radius, stroke-width, stroke-color, fill, border-dash
+    pure callback circle(length, length, color, color, [float]) -> image;
+
+    // param: arr.len, full, full-value, empty-value
+    // e.g. 
+    // fill-array(8, 4, 1, -1) returns [1,1,1,1,-1,-1,-1,-1] 
+    pure callback fill-array(int, int, int, int) -> [int];
+
+    // size, tick, passive-color, active-color
+    pure callback loader(length, int, color, color) -> image;
+    
+    // size, tick, passive-color, active-color, thickness
+    pure callback circular-progress(length, int, color, color, float) -> image;
+    pure callback long_text(string) -> string;
+
+    // source-image, border-radius, x, y, w, h
+    pure callback round_image(image, length, length, length, length, length) -> image;
+
+    // source-image, border-radius, w, h
+    pure callback round_image_scaling(image, length, length, length) -> image;
+
+    pure callback hue-slider(length, length, bool) -> image;
+    pure callback color-palette(length, length, color) -> image;
+    pure callback pick-color(image, length, length) -> color;
+    pure callback get-hsv(color) -> [float];
+    pure callback get-rgb(color) -> [int];
+    pure callback color-from-hsl(float, float, float, float) -> color;
+    pure callback color-from-rgb(int, int, int, int) -> color;
+
+    // (source, max-len, elide) — matches the SDK binder's utilites::shorten_string.
+    pure callback shorten-string(string, int, bool) -> string;
+
+    pure public function get-card-bg-color(color: CardColor) -> brush {
+        if (color == CardColor.blue) {
+            return UIColors.blue-500;
+        }
+        if (color == CardColor.teal) {
+            return UIColors.teal-500;
+        }
+        if (color == CardColor.dark-copper) {
+            return UIColors.dark-copper-500;
+        }
+        if (color == CardColor.light-copper) {
+            return UIColors.light-copper-500;
+        }
+        if (color == CardColor.pine) {
+            return UIColors.pine-500;
+        }
+        if (color == CardColor.green) {
+            return UIColors.green-500;
+        }
+        if (color == CardColor.purple) {
+            return UIColors.purple-500;
+        }
+        if (color == CardColor.dark-grey) {
+            return UIColors.neutral-700;
+        }
+        if (color == CardColor.orange) {
+            return UIColors.orange-500;
+        }
+        if (color == CardColor.red) {
+            return UIColors.red-500;
+        }
+        return UIColors.blue-500;
+    }
+
+    pure public function get-card-line-top-color(color: CardColor) -> brush {
+        if (color == CardColor.blue) {
+            return UIColors.blue-300;
+        }
+        if (color == CardColor.teal) {
+            return UIColors.teal-300;
+        }
+        if (color == CardColor.dark-copper) {
+            return UIColors.dark-copper-300;
+        }
+        if (color == CardColor.light-copper) {
+            return UIColors.light-copper-300;
+        }
+        if (color == CardColor.pine) {
+            return UIColors.pine-300;
+        }
+        if (color == CardColor.green) {
+            return UIColors.green-300;
+        }
+        if (color == CardColor.purple) {
+            return UIColors.purple-300;
+        }
+        if (color == CardColor.dark-grey) {
+            return UIColors.neutral-300;
+        }
+        if (color == CardColor.orange) {
+            return UIColors.orange-200;
+        }
+        if (color == CardColor.red) {
+            return UIColors.red-200;
+        }
+        return UIColors.blue-300;
+    }
+
+    pure public function get-card-line-bottom-color(color: CardColor) -> brush {
+        if (color == CardColor.blue) {
+            return UIColors.blue-700;
+        }
+        if (color == CardColor.teal) {
+            return UIColors.teal-700;
+        }
+        if (color == CardColor.dark-copper) {
+            return UIColors.dark-copper-700;
+        }
+        if (color == CardColor.light-copper) {
+            return UIColors.light-copper-700;
+        }
+        if (color == CardColor.pine) {
+            return UIColors.pine-700;
+        }
+        if (color == CardColor.green) {
+            return UIColors.green-700;
+        }
+        if (color == CardColor.purple) {
+            return UIColors.purple-700;
+        }
+        if (color == CardColor.dark-grey) {
+            return UIColors.neutral-700;
+        }
+        if (color == CardColor.orange) {
+            return UIColors.orange-600;
+        }
+        if (color == CardColor.red) {
+            return UIColors.red-600;
+        }
+        return UIColors.blue-700;
+    }
+
+    pure public function get-card-color-picker-color(color: CardColor) -> brush {
+        if (color == CardColor.blue) {
+            return UIColors.blue-700;
+        }
+        if (color == CardColor.teal) {
+            return UIColors.blue-400;
+        }
+        if (color == CardColor.dark-copper) {
+            return UIColors.light-copper-700;
+        }
+        if (color == CardColor.light-copper) {
+            return UIColors.light-copper-500;
+        }
+        if (color == CardColor.pine) {
+            return UIColors.green-700;
+        }
+        if (color == CardColor.green) {
+            return UIColors.green-500;
+        }
+        if (color == CardColor.purple) {
+            return UIColors.purple-500;
+        }
+        if (color == CardColor.dark-grey) {
+            return UIColors.neutral-700;
+        }
+        if (color == CardColor.orange) {
+            return UIColors.orange-500;
+        }
+        if (color == CardColor.red) {
+            return UIColors.red-500;
+        }
+        return UIColors.blue-500;
+    }
+
+    pure public function importance-to-str(imp: Importance) -> string {
+        if (imp == Importance.primary) {
+            return "primary";
+        } else if (imp == Importance.secondary) {
+            return "secondary";
+        } else if (imp == Importance.tertiary) {
+            return "tertiary";
+        } else if (imp == Importance.notice) {
+            return "notice";
+        } else { // if (imp == Importance.negative)
+            return "negative";
+        }
+    }
+
+    out property <[CardColor]> card-color-picker-model: [
+        CardColor.teal,
+        CardColor.light-copper,
+        CardColor.green,
+        CardColor.purple,
+        CardColor.orange,
+        CardColor.dark-grey,
+    ];
+
+    pure public function index-to-card-color(index: int) -> CardColor {
+        card-color-picker-model[Math.mod(Math.abs(index), card-color-picker-model.length)]
+    }
+
+    // Checks and enforces bounds of numbers passed as strings to avoid being limited by i32
+    pure callback check-bounds(string, string, string) -> string;
+    pure callback is-in-bounds(string, string, string) -> bool;
+    pure callback exceeds-maximum(string, string) -> bool;
+
+    // Each of these increments or decrements by 1
+    pure callback decrement-string(string) -> string;
+    pure callback increment-string(string) -> string;
+    pure callback filter-special-characters(string) -> string;
+}

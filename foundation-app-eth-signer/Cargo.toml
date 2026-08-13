@@ -1,0 +1,60 @@
+# SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
+# SPDX-License-Identifier: MIT
+
+[package]
+name = "eth-signer"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+exclude = [".foundation-sdk"]
+
+[dependencies]
+log = "0.4"
+log-server = { package = "xous-api-log", path = ".foundation-sdk/current/lib/keyos/xous/api/log" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1"
+server = { path = ".foundation-sdk/current/lib/keyos/server" }
+slint-keyos-platform = { path = ".foundation-sdk/current/lib/keyos/slint-keyos-platform/runtime" }
+foundation-themes = { path = ".foundation-sdk/current/lib/keyos/sdk/crates/foundation-themes" }
+
+anyhow = "1"
+hex = "0.4"
+# Generated tr.rs translation tables reference phf at the crate root.
+phf = { version = "0.11", features = ["macros"] }
+zeroize = { version = "1", features = ["alloc"] }
+
+# GetAppSeed (never GetSeed: the master seed is Foundation-only and requesting
+# it aborts the app at connection time).
+security = { path = ".foundation-sdk/current/lib/keyos/api/security" }
+# std::fs writes are Unsupported on device; persistence goes through FileBacked
+# at fs::Location::AppData.
+fs = { path = ".foundation-sdk/current/lib/keyos/api/fs" }
+file-backed = { path = ".foundation-sdk/current/lib/keyos/utils/file-backed" }
+
+# Ethereum key derivation and address generation. Foreign-workspace path deps:
+# they resolve against common-eth-signer's own workspace, not this one.
+signer-core = { path = "../common-eth-signer/crates/core" }
+signer-signing = { path = "../common-eth-signer/crates/signing" }
+# Same majors as signer-signing so SigningKey/Address types unify.
+k256 = { version = "0.13", features = ["ecdsa"] }
+bip39 = "2"
+bip32 = "0.5"
+alloy-primitives = "1"
+getrandom = "0.2"
+
+[build-dependencies]
+slint-keyos-platform-build = { path = ".foundation-sdk/current/lib/keyos/slint-keyos-platform/build" }
+
+# Randomness is pre-wired: add `getrandom = "0.2"` (or `rand = "0.8"`) and calls
+# route to the TRNG on device. Stay on the getrandom 0.2 line; 0.3+ is uncovered.
+[patch.crates-io]
+getrandom = { path = ".foundation-sdk/current/lib/keyos/imports/getrandom" }
+
+# Unoptimized crypto (PBKDF2 seed expansion, secp256k1) wedges the device on
+# launch — the app looks like it hangs with no panic in the log.
+[profile.dev.package."*"]
+opt-level = 3
+#[profile.dev]
+#opt-level = 1
+

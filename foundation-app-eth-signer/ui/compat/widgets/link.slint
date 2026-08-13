@@ -1,0 +1,50 @@
+// SPDX-FileCopyrightText: 2025 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import {Palette, Importance, Size, Font, FontSize, Utils, ColorHelpers} from "../theme.slint";
+import {TextMd} from "./txt.slint";
+import {ScaledTouch} from "scaled-touch.slint";
+
+export component Link inherits Rectangle {
+    // Override inherited properties
+    background: Palette.transparent;
+    height: Size.sz10;
+
+    // Private properties
+    private property <brush> text-color: ColorHelpers.get-btn-content-color(importance, scaled-touch.pressed || force-pressed, enabled);
+
+    // Public properties
+    in property <string> id;
+    in property <string> label;
+    in property <bool> enabled: true;
+    in property <bool> force-pressed: false;
+    in property <Importance> importance: Importance.tertiary;
+    in property <float> touch-factor: 2.5;
+
+    // Callbacks
+    callback clicked(string);
+
+    HorizontalLayout {
+        spacing: Size.sz2;
+        alignment: center;
+        padding-left: Size.sz2;
+        padding-right: Size.sz2;
+
+        if label != "": TextMd {
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            text: root.label;
+            color: text-color;
+            bold: true;
+            horizontal-stretch: 0;
+        }
+    }
+
+    scaled-touch := ScaledTouch {
+        enabled: root.enabled;
+        touch-factor: root.touch-factor;
+        clicked => {
+            root.clicked(id);
+        }
+    }
+}

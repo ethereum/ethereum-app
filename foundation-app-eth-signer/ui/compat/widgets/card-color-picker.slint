@@ -1,0 +1,73 @@
+// SPDX-FileCopyrightText: 2025 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import {Palette, Size, CardColor, Timings, Utils } from "../theme.slint";
+import {RadioButton} from "./radio-button.slint";
+import {TextSm} from "./txt.slint";
+import {Icon} from "./icon.slint";
+
+component CardColorButton inherits Rectangle {
+    in property <CardColor> card-color;
+    in property <bool> selected;
+    in property <bool> enabled;
+
+    callback clicked();
+
+    border-radius: Size.sz6;
+    height: Size.sz14;
+    width: Size.sz14;
+    background: Utils.get-card-color-picker-color(card-color);
+
+    touchArea := TouchArea {
+        clicked => {
+            if enabled {
+                clicked();
+            }
+        }
+    }
+
+    Icon {
+        name: "check";
+        color: enabled ? Palette.content-primary-inverse : Palette.content-disabled;
+        size: Size.sz8;
+        opacity: selected ? 1 : 0;
+
+        animate opacity { duration: Timings.prop-change; }
+    }
+}
+
+export component CardColorPicker inherits VerticalLayout {
+    spacing: Size.sz2;
+
+    // Public properties
+    in-out property <int> selected-index: 0;
+    out property <CardColor> selected-color: Utils.index-to-card-color(selected-index);
+    in property <bool> enabled: true;
+    in property <string> title;
+
+    // Callbacks
+    callback changed(int);
+
+    HorizontalLayout {
+        padding-left: Size.sz4;
+        alignment: start;
+        TextSm {
+            text: title;
+            color: Palette.content-tertiary;
+        }
+    }
+
+    HorizontalLayout {
+        alignment: space-between;
+
+        for card-color[index] in Utils.card-color-picker-model: CardColorButton {
+            card-color: card-color;
+            selected: index == selected-index;
+            enabled: enabled;
+            clicked => {
+                selected-index = index;
+                changed(index);
+            }
+        }
+    }
+}

@@ -1,0 +1,255 @@
+// SPDX-FileCopyrightText: 2025 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { UISize, Size, IconSize, Palette, Importance , CompatImages} from "../theme.slint";
+import { Panel } from "./panel.slint";
+import { Button } from "./button.slint";
+import { TextSm, HeadingMd } from "./txt.slint";
+import { Icon } from "./icon.slint";
+import { PopupMenu } from "./popup-menu.slint";
+import { Shield } from "./shield.slint";
+import { Images, CurrentTheme, CallbackResult, ModalTextLine, ResultLevel } from "../theme.slint";
+
+export component BaseWindow inherits Window {
+    width: UISize.screen-width;
+    height: UISize.screen-height;
+
+    Image {
+        source: CompatImages.common(CurrentTheme.is-dark ? "images/background-dark" : "images/background");
+    }
+
+    // Allow defocusing the keyboard by clicking somewhere else
+    FocusScope {
+        init => {
+            self.focus()
+        }
+    }
+}
+
+export component BasePage inherits Rectangle {
+    x: 0;
+    y: UISize.control-center-status-bar-height;
+    width: UISize.screen-width;
+    height: UISize.app-window-height;
+}
+
+export component PageBody inherits VerticalLayout {
+    alignment: space-between;
+
+    in property <length> p-x: Size.sz6;
+    in property <length> p-y: Size.sz6;
+
+    padding-left: p-x;
+    padding-right: p-x;
+    padding-top: p-y;
+    padding-bottom: p-y;
+}
+
+// useful for pages with NO nav header, and just a jumbo icon
+export component JumboIconPageBody inherits PageBody {
+    padding-top: Size.sz16;
+}
+
+export component ContentSection inherits VerticalLayout {
+    alignment: start;
+    spacing: Size.sz6;
+}
+
+export component ButtonSection inherits VerticalLayout {
+    alignment: end;
+    spacing: Size.sz4;
+    padding-bottom: Size.sz2;
+    padding-left: Size.sz2;
+    padding-right: Size.sz2;
+}
+
+export component ScrollBody inherits Rectangle {
+    in-out property <length> viewport-x <=> flickable.viewport-x;
+    in-out property <length> viewport-y <=> flickable.viewport-y;
+
+    in-out property <length> viewport-width <=> flickable.viewport-width;
+    in-out property <length> viewport-height <=> flickable.viewport-height;
+
+    out property <bool> at-top: flickable.viewport-y == 0;
+    out property <bool> at-bottom: -flickable.viewport-y + flickable.height >= flickable.viewport-height;
+
+    in property <length> p-x: Size.sz6;
+    in property <length> p-y: Size.sz6;
+
+    // Scrollable content
+    PageBody {
+        p-x: p-x;
+        p-y: p-y;
+
+        flickable := Flickable {
+            // Allow defocusing the keyboard by clicking somewhere else
+            // Flickable doesn't let touch events through, which is why we need it here too,
+            // and not just in BaseWindow.
+            FocusScope { }
+
+            @children
+        }
+    }
+}
+
+export component Modal inherits Rectangle {
+    in property <string> icon: "info";
+    in property <brush> icon-color: Palette.content-brand;
+    in property <string> title;
+    in property <string> text;
+    in property <[ModalTextLine]> lines: [{ text: root.text }];
+    in property <length> button-spacing: Size.sz4;
+
+    background: Palette.overlay;
+
+    if root.visible: FocusScope {
+        init => {
+            self.focus();
+        }
+    }
+
+    // Don't allow touching items behind this
+    TouchArea { }
+
+    Panel {
+        width: UISize.modal-width;
+        z: 100;
+
+        VerticalLayout {
+            padding: Size.sz6;
+            alignment: start;
+            spacing: Size.sz8;
+
+            HorizontalLayout {
+                alignment: center;
+                Icon {
+                    name: icon;
+                    size: IconSize.px64;
+                    color: icon-color;
+                }
+            }
+
+            ContentSection {
+                spacing: Size.sz4;
+                HeadingMd {
+                    text: title;
+                    horizontal-alignment: center;
+                }
+
+                for line in root.lines: TextSm {
+                    text: line.text;
+                    color: line.color == Colors.transparent ? Palette.content-secondary : line.color;
+                    bold: line.bold;
+                    horizontal-alignment: center;
+                }
+            }
+
+            ButtonSection {
+                spacing: button-spacing;
+                @children
+            }
+        }
+    }
+}
+
+export component ConfirmationModal inherits Modal {
+    in property <string> confirm-button-label;
+    in property <bool> critical: false;
+    in property <string> cancel-button-label;
+
+    icon-color: critical ? Palette.content-negative : Palette.content-brand;
+
+    callback cancel-clicked();
+    callback confirm-clicked();
+
+    Button {
+        icon: "";
+        label: cancel-button-label;
+        importance: Importance.secondary;
+        clicked => {
+            cancel-clicked();
+        }
+    }
+
+    Button {
+        icon: "";
+        label: confirm-button-label;
+        importance: critical ? Importance.negative : Importance.primary;
+
+        clicked => {
+            confirm-clicked();
+        }
+    }
+}
+
+export component ErrorModal inherits Modal {
+    callback confirm-clicked();
+    in property <string> confirm-button-label;
+
+    Button {
+        icon: "";
+        label: confirm-button-label;
+        importance: Importance.primary;
+        clicked => {
+            confirm-clicked();
+        }
+    }
+}
+
+export component ResultModal inherits ErrorModal {
+    in property <CallbackResult> result;
+
+    icon: result.level == ResultLevel.info ? "info" : "alert";
+    icon-color: result.level == ResultLevel.info ? Palette.content-brand : Palette.content-notice;
+    title: result.title;
+    text: result.text;
+}
+
+export component OverlayMenu inherits Rectangle {
+    background: Palette.overlay;
+
+    in property <length> popup-menu-y: UISize.popup-menu-y;
+    in property <length> popup-menu-x: self.width - m.width - Size.sz7;
+
+    callback touched-off();
+
+    m := PopupMenu {
+        x: popup-menu-x;
+        y: popup-menu-y;
+        z: 100;
+
+        @children
+    }
+
+    TouchArea {
+        clicked => {
+            touched-off();
+        }
+    }
+}
+
+export component ShieldPage inherits Rectangle {
+    x: 0;
+    y: UISize.control-center-status-bar-height;
+    width: UISize.screen-width;
+    height: UISize.app-window-height - Size.sz5;
+    padding-top: Size.sz1;
+
+    in property <length> top-inner-padding: Size.sz6;
+    in property <bool> mask: true;
+
+    Shield {
+        mask: mask;
+
+        VerticalLayout {
+            alignment: space-between;
+
+            padding-left: Size.sz6;
+            padding-right: Size.sz6;
+            padding-top: top-inner-padding;
+            padding-bottom: 10px;  // Adds with built-in shield padding to 42px as per spec
+
+            @children
+        }
+    }
+}

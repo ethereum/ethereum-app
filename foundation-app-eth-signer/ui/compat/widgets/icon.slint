@@ -1,0 +1,17 @@
+// SPDX-FileCopyrightText: 2023 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import {Palette, Size, Images} from "../theme.slint";
+
+export component Icon inherits Image {
+    // Public properties
+    in property <string> name: "check";
+    in property <length> size: Size.sz6;
+    in property <brush> color <=> self.colorize;
+    source: Images.icon(name, size);
+    colorize: Palette.content-primary;
+    width: size;
+    height: size;
+
+    @children
+}

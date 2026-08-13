@@ -1,0 +1,62 @@
+// SPDX-FileCopyrightText: 2025 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import {IconButton} from "./icon-button.slint";
+import {Size, IconSize, Palette, Importance} from "../theme.slint";
+
+export component Movable {
+    in property <bool> move-mode: false;
+    in property <bool> first: false;
+    in property <bool> last: false;
+
+    property <bool> solo: first && last;
+
+    callback move-position(bool);
+
+    height: 96px;
+
+    HorizontalLayout {
+        // width: parent.width;
+        alignment: center;
+        spacing: Size.sz2;
+        if move-mode && !solo: VerticalLayout {
+            alignment: center;
+            IconButton {
+                icon: "arrow-down";
+                //TODO: make new importance to match design grey
+                visible: !last;
+                importance: Importance.normal;
+                icon-size: Size.sz7;
+                size: Size.sz10;
+
+                clicked => {
+                    if !last {
+                        move-position(false);
+                    }
+                }
+            }
+        }
+
+        HorizontalLayout {
+            alignment: center;
+            @children
+        }
+
+        if move-mode && !solo: VerticalLayout {
+            alignment: center;
+            IconButton {
+                icon: "arrow-up";
+                visible: !first;
+                importance: Importance.normal;
+                icon-size: Size.sz7;
+                size: Size.sz10;
+
+                clicked => {
+                    if !first {
+                        move-position(true);
+                    }
+                }
+            }
+        }
+    }
+}

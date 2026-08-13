@@ -1,0 +1,106 @@
+// SPDX-FileCopyrightText: 2024 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { UISize, Palette, Size, Importance } from "../theme.slint";
+import { Panel } from "./panel.slint";
+import { TextSm, HeadingMd } from "./txt.slint";
+import { Button } from "./button.slint";
+import { Icon } from "../widgets/icon.slint";
+
+export component Dialog inherits Panel {
+    level: 4;
+
+    // Public properties
+    in property <string> icon;
+    in property <brush> icon-color:Palette.content-brand;
+    in property <string> title;
+    in property <string> message;
+    in property <string> ok-text: "OK";
+    in property <string> cancel-text: "Cancel";
+    in property <bool> show-ok: true;
+    in property <bool> show-cancel: false;
+    in property <bool> show-close-button:false;
+    in property <string> warning-message;
+
+    callback on-ok;
+    callback on-cancel;
+
+    VerticalLayout {
+        padding: Size.sz6;
+        spacing: Size.sz8;
+
+        VerticalLayout {
+            spacing: Size.sz4;
+            if show-close-button: HorizontalLayout {
+                HorizontalLayout {
+                    alignment: end;
+                    Icon {
+                        name: "close";
+                        color: Palette.content-primary;
+                        TouchArea {
+                            clicked => {
+                                on-cancel();
+                            }
+                        }
+                    }
+                }
+            }
+            if(icon != ""): HorizontalLayout {
+                alignment: center;
+                Icon {
+                    name: icon;
+                    color: icon-color;
+                    size: Size.sz16;
+                }
+            }
+            HeadingMd {
+                text: title;
+                color: Palette.content-primary;
+                horizontal-alignment: center;
+            }
+
+            TextSm {
+                text: message;
+                color: Palette.content-primary;
+                horizontal-alignment: center;
+            }
+
+            if(warning-message != ""):
+            TextSm {
+                text: warning-message;
+                color: Palette.content-notice;
+                horizontal-alignment: center;
+            }
+        }
+
+        VerticalLayout {
+            spacing: Size.sz4;
+
+            if (show-cancel): Button {
+                label: cancel-text;
+                importance: Importance.secondary;
+                clicked => {
+                    on-cancel();
+                }
+            }
+
+            if (show-ok): Button {
+                label: ok-text;
+                clicked => {
+                    on-ok();
+                }
+            }
+        }
+    }
+}
+
+export component Test inherits Dialog {
+    width: 400px;
+    height: 300px;
+    title: "Wrong Hash";
+    message: "This is a test of the emergency broadcast system.  This is only a test.";
+    show-ok: true;
+    show-cancel: true;
+    ok-text: "Confirm";
+    cancel-text: "Cancel";
+}

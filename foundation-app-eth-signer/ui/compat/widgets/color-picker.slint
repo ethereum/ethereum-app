@@ -1,0 +1,134 @@
+// SPDX-FileCopyrightText: 2023 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import {Palette, Images, Size, UISize, Utils} from "../theme.slint";
+
+export enum ColorPickerType { hsl, sliders, palette }
+
+struct ColorPickerEvent {
+    color: color,
+    x: length,
+    y: length,
+}
+
+component ColorPickerInner {
+    in property <image> source;
+    callback clicked(ColorPickerEvent);
+
+    private property <bool> is_clicked: false;
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        color-selector := Image {
+            width: root.width;
+            height: root.height;
+            source: root.source;
+        }
+
+        clicked => {
+            clicked({
+                color: Utils.pick-color(root.source, touch.mouse-x, touch.mouse-y),
+                x: touch.mouse-x,
+                y: touch.mouse-y,
+            })
+        }
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.down {
+                is_clicked = true;
+            }
+            if e.kind == PointerEventKind.up {
+                is_clicked = false;
+            }
+            if is_clicked && e.kind == PointerEventKind.move && touch.mouse-x >= 0 && touch.mouse-x < root.width && touch.mouse-y >= 0 && touch.mouse-y < root.height {
+                clicked({
+                    color: Utils.pick-color(root.source, touch.mouse-x, touch.mouse-y),
+                    x: touch.mouse-x,
+                    y: touch.mouse-y,
+                });
+            }
+        }
+    }
+}
+
+component HSLColorPicker inherits Rectangle {
+    in-out property <color> selected-color: red;
+
+    private property <color> base-color: red;
+
+    private property <length> hue-y;
+
+    private property <length> palette-x;
+    private property <length> palette-y;
+
+    callback clicked(color);
+    clip: false;
+
+    HorizontalLayout {
+        spacing: Size.sz4;
+
+        palette := ColorPickerInner {
+            source: Utils.color-palette(root.width - Size.sz4 - Size.sz16, root.height, base-color);
+            width: root.width - Size.sz4 - Size.sz16;
+            height: root.height;
+            clicked(e) => {
+                selected-color = e.color;
+                palette-x = e.x;
+                palette-y = e.y;
+                root.clicked(selected-color);
+            }
+        }
+
+        hue-selector := ColorPickerInner {
+            source: Utils.hue-slider(Size.sz16, root.height, true);
+            width: Size.sz16;
+            height: root.height;
+            clicked(e) => {
+                base-color = e.color;
+                hue-y = e.y;
+                selected-color = Utils.pick-color(palette.source, palette-x, palette-y);
+                root.clicked(selected-color);
+            }
+        }
+    }
+
+    Rectangle {
+        private property <length> ds: 20px;
+        dot := Rectangle {
+            x: palette-x - ds / 2;
+            y: palette-y - ds / 2;
+            width: ds;
+            height: ds;
+            border-radius: ds / 2;
+            border-color: white;
+            border-width: Size.sz0_5;
+            background: selected-color;
+        }
+
+        arr := Image {
+            x: hue-selector.x - Size.sz4;
+            y: hue-y - Size.sz3;
+            source: Images.icon("chevron-right", Size.sz6);
+            colorize: base-color;
+        }
+    }
+}
+
+export component ColorPicker {
+    in property <ColorPickerType> picker-type: ColorPickerType.hsl;
+
+    in-out property <color> selected-color;
+
+    out property <[int]> RGB: Utils.get-rgb(selected-color);
+    out property <[float]> HSL: Utils.get-hsv(selected-color);
+
+    callback clicked(color);
+
+    if picker-type == ColorPickerType.hsl: HSLColorPicker {
+        width: root.width;
+        height: root.height;
+        clicked(c) => {
+            root.selected-color = c;
+            root.clicked(c);
+        }
+    }
+}

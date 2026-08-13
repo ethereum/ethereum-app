@@ -1,0 +1,29 @@
+// SPDX-FileCopyrightText: 2024 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { Palette, Size } from "../theme.slint";
+import { Shadow } from "./shadow.slint";
+
+export component Panel {
+    in property <color> border-color:  Palette.border-tertiary;
+    in property <length> border-width: Size.sz0_25;
+    in property <length> border-radius: Size.sz6;
+    in property <brush> background: Palette.background-primary;
+    in property <int> level: 3;
+
+    // Shadow goes in the background
+    Shadow {
+        width: 100%;
+        height: 100%;
+        level: root.level;
+    }
+
+    Rectangle {
+        border-color: border-color;
+        border-width: border-width;
+        border-radius: border-radius;
+        background: background;
+        clip: true;
+        @children
+    }
+}

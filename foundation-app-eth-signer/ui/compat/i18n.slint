@@ -1,0 +1,23 @@
+// SPDX-FileCopyrightText: 2024 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+export global TR {
+    // Simple string lookup
+    pure callback lookup(string) -> string;
+
+    // Replace the placeholders in the string with the arguments.
+    // e.g., {0}, {1}, etc.
+    pure callback format(string, [string]) -> string;
+
+    // Parameter formatting helper functions
+    pure callback int(int) -> string;
+    pure callback float(float, int) -> string;
+
+    lookup(id) => {
+        return id;
+    }
+
+    format(id, _args) => {
+        return id;
+    }
+}

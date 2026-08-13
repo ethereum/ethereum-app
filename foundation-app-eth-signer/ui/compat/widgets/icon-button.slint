@@ -1,0 +1,54 @@
+// SPDX-FileCopyrightText: 2023 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+
+import {Icon} from "icon.slint";
+import {Palette, Size, Importance, ColorHelpers} from "../theme.slint";
+import {ScaledTouch} from "scaled-touch.slint";
+
+export component IconButton inherits Rectangle {
+    // Override inherited properties
+    width: size;
+    height: size;
+    background: ColorHelpers.get-btn-bg-color(importance, touchArea.pressed || force-pressed, enabled);
+    border-radius: size / 2;
+    clip: false;
+
+    // Public properties
+    in property <string> id;
+    in property <Importance> importance: Importance.normal;
+    in property <bool> enabled: true;
+    in property <string> icon;
+    in property <length> size: Size.sz16;
+    // TODO: determine if this minimum will break anything
+    in property <length> icon-size: Math.min(size, Size.sz8);
+    in property <float> touch-factor: 2.5;
+    in property <bool> recolorable: true;
+    in property <bool> force-pressed: false;
+    in property <brush> icon-color: ColorHelpers.get-btn-content-color(importance, touchArea.pressed || force-pressed, enabled);
+
+    // Callbacks
+    callback clicked(string);
+
+    VerticalLayout {
+        alignment: center;
+
+        HorizontalLayout {
+            alignment: center;
+            if (icon != ""): Icon {
+                name: icon;
+                horizontal-stretch: 1;
+                colorize: (recolorable ? icon-color : transparent);
+                size: icon-size;
+            }
+        }
+    }
+
+    touchArea := ScaledTouch {
+        enabled: root.enabled;
+        touch-factor: root.touch-factor;
+        clicked => {
+            root.clicked(id);
+        }
+    }
+}

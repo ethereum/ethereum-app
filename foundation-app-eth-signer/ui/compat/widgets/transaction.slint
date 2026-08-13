@@ -1,0 +1,64 @@
+// SPDX-FileCopyrightText: 2023 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { CenterLayout } from "./cross-layout.slint";
+import { Icon } from "./icon.slint";
+import { TextLg, TextMd } from "./txt.slint";
+import { Size, Palette, UISize } from "../theme.slint";
+
+export component Transaction {
+    // Public properties
+    in property <string> icon;
+    in property <string> type;
+    in property <string> time;
+    in property <string> primary-amt;
+    in property <string> secondary-amt;
+    HorizontalLayout {
+        padding-bottom: Size.sz4;
+
+        // Icon
+        CenterLayout {
+            padding-right: Size.sz4;
+            Icon {
+                name: "arrow-up-right";
+                color: Palette.content-tertiary;
+            }
+        }
+
+        // Type and time
+        VerticalLayout {
+            horizontal-stretch: 1;
+            TextLg {
+                text: type;
+                padding-bottom: 0px;
+            }
+
+            TextMd {
+                text: time;
+                padding-bottom: 0px;
+                color: Palette.content-tertiary;
+            }
+        }
+
+        // Amounts
+        VerticalLayout {
+            horizontal-stretch: 0;
+            HorizontalLayout {
+                alignment: end;
+                TextLg {
+                    text: primary-amt;
+                    padding-bottom: 0px;
+                }
+            }
+
+            HorizontalLayout {
+                alignment: end;
+                TextMd {
+                    text: secondary-amt;
+                    padding-bottom: 0px;
+                    color: Palette.content-tertiary;
+                }
+            }
+        }
+    }
+}

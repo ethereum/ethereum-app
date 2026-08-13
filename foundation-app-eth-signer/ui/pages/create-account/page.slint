@@ -1,0 +1,158 @@
+// SPDX-FileCopyrightText: 2025 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { CreateAccountProps } from "./props.slint";
+import { CreateAccount, CreateAccountState } from "../../create-account.slint";
+import { IconButton, AppHeader, BasePage, PageBody,
+         ContentSection,
+         TitledInput, ButtonSection, Button, TextMd,
+         TimerCircularProgress, NavHeader, HeadingMd,
+         WrappedIcon, JumboIconPageBody
+     } from "../../compat/widgets.slint";
+import { Palette, Size, Importance, CardColor } from "../../compat/theme.slint";
+import { Navigate } from "../../gen/navigate.slint";
+import { TR2, TrId } from "../../gen/tr.slint";
+
+
+component LoadingPage inherits JumboIconPageBody {
+    ContentSection {
+        HorizontalLayout {
+            alignment: center;
+            TimerCircularProgress {
+                indeterminate: true;
+            }
+        }
+
+        HeadingMd {
+            text: TR2.lookup(TrId.CreatingAccountHeader);
+            horizontal-alignment: center;
+        }
+    }
+}
+
+component SuccessPage inherits JumboIconPageBody {
+    ContentSection {
+        HorizontalLayout {
+            alignment: center;
+            WrappedIcon { }
+        }
+
+        HeadingMd {
+            horizontal-alignment: center;
+            text: TR2.lookup(TrId.CreatingAccountSuccessHeader);
+        }
+    }
+
+    ButtonSection {
+        Button {
+            label: TR2.lookup(TrId.CommonButtonDone);
+            clicked => {
+                CreateAccount.state = CreateAccountState.Idle;
+                Navigate.backward();
+            }
+        }
+    }
+}
+
+component ErrorPage inherits JumboIconPageBody {
+    ContentSection {
+        HorizontalLayout {
+            alignment: center;
+            WrappedIcon {
+                inner-icon: "close";
+            }
+        }
+
+        VerticalLayout {
+            spacing: Size.sz6;
+            HeadingMd {
+                horizontal-alignment: center;
+                text: TR2.lookup(TrId.CreatingAccountFailedHeader);
+            }
+
+            TextMd {
+                horizontal-alignment: center;
+                text: TR2.lookup(TrId.CreatingAccountFailedSubheader);
+                color: Palette.content-tertiary;
+            }
+        }
+    }
+
+    ButtonSection {
+        Button {
+            label: TR2.lookup(TrId.CommonButtonRetry);
+            importance: Importance.primary;
+            clicked => {
+                CreateAccount.state = CreateAccountState.Idle;
+            }
+        }
+    }
+}
+
+export component CreateAccountPage inherits BasePage {
+    in property <CreateAccountProps> props;
+
+    property <string> new-label;
+    property <bool> label-error: true;
+
+    // The CreateAccount global outlives this page; a stale Success/Error left
+    // behind by a previous visit (e.g. leaving the success screen through a
+    // back gesture instead of Done) would otherwise block the form forever.
+    init => {
+        CreateAccount.state = CreateAccountState.Idle;
+    }
+
+    VerticalLayout {
+        visible: CreateAccount.state == CreateAccountState.Idle;
+        AppHeader {
+            title: TR2.lookup(TrId.CreateAccountTitle);
+
+            IconButton {
+                icon: "chevron-left";
+                size: Size.sz8;
+                importance: Importance.normal;
+                clicked => {
+                    CreateAccount.state = CreateAccountState.Idle;
+                    Navigate.backward();
+                }
+            }
+        }
+
+        PageBody {
+            p-x: Size.sz4;
+            p-y: Size.sz4;
+
+            ContentSection {
+                TitledInput {
+                    title: TR2.lookup(TrId.CreateAccountLabel);
+                    placeholder: TR2.lookup(TrId.CreateAccountLabelFillerText);
+                    has-notice: true;
+                    caps-mode: sentences;
+
+                    edited(text) => {
+                        new-label = text;
+                        self.message = CreateAccount.validate-new-label(text);
+                        self.has-notice = self.message != "";
+                        label-error = self.has-notice;
+                    }
+                }
+            }
+
+            ButtonSection {
+                Button {
+                    label: TR2.lookup(TrId.CommonButtonCreate);
+                    enabled: !label-error;
+                    clicked => {
+                        CreateAccount.create-single-sig({
+                            label: new-label,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    if CreateAccount.state == CreateAccountState.Creating: LoadingPage { }
+    if CreateAccount.state == CreateAccountState.Success: SuccessPage { }
+    if CreateAccount.state == CreateAccountState.Error: ErrorPage { }
+}

@@ -1,0 +1,78 @@
+// SPDX-FileCopyrightText: 2023 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import {Palette, Font, FontHelpers, FontInfo, FontSize} from "../theme.slint";
+
+component Txt inherits Text {
+    color: Palette.content-primary;
+    wrap: word-wrap;
+    vertical-alignment: TextVerticalAlignment.top;
+    horizontal-alignment: TextHorizontalAlignment.left;
+    font-family: font.family;
+    font-weight: font.weight;
+    font-size: font.size;
+    letter-spacing: font.letter-spacing;
+
+    // Public properties
+    in property <FontInfo> font: Font.text-md;
+    in property <FontSize> size: FontSize.md;
+}
+
+// Only use the plain Heading when you need the size to be dynamic via the size property.
+export component Heading inherits Txt {
+    text: "";
+    size: FontSize.md;
+    font: FontHelpers.get-header-font(root.size);
+}
+
+export component HeadingXs inherits Heading {
+    size: FontSize.xs;
+}
+
+export component HeadingSm inherits Heading {
+    size: FontSize.sm;
+}
+
+export component HeadingMd inherits Heading {
+    size: FontSize.md;
+}
+
+export component HeadingLg inherits Heading {
+    size: FontSize.lg;
+}
+
+export component HeadingXl inherits Heading {
+    size: FontSize.xl;
+}
+
+// Only use the plain Text when you need the size to be dynamic via the size property.
+export component DynamicText inherits Txt {
+    text: "";
+    size: FontSize.md;
+    font: FontHelpers.get-text-font(root.size, bold);
+    in property <bool> bold: false;
+}
+
+export component TextXs inherits DynamicText {
+    size: FontSize.xs;
+}
+
+export component TextSm inherits DynamicText {
+    size: FontSize.sm;
+}
+
+export component TextMd inherits DynamicText {
+    size: FontSize.md;
+}
+
+export component TextLg inherits DynamicText {
+    size: FontSize.lg;
+}
+
+export component TextXl inherits DynamicText {
+    size: FontSize.xl;
+}
+
+export component TextTime inherits DynamicText {
+    size: FontSize.time;
+}

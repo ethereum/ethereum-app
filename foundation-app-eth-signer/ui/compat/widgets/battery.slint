@@ -1,0 +1,44 @@
+// SPDX-FileCopyrightText: 2024 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import {Images, Size} from "../theme.slint";
+import {DarkPalette} from "../palettes/dark-palette.slint";
+
+export component Battery inherits Rectangle {
+    in property <int> percentage: 50;
+    in property <bool> is-charging: true;
+
+    in property <brush> bg-color: DarkPalette.background-primary;
+    in property <brush> fill-color: DarkPalette.content-primary;
+    in property <brush> charging-color: DarkPalette.content-brand;
+
+    width: 36px;
+    height: 17px;
+
+    property <brush> battery-fill-color: is-charging ? charging-color : fill-color;
+
+    // Battery fill
+    Rectangle {
+        width: (27px * percentage) / 100;
+        x: 3px;
+        height: 11px;
+        background: battery-fill-color;
+        border-radius: 1px;
+        padding: 2px;
+    }
+
+    // Battery outline
+    Image {
+        source: Images.common("images/battery");
+        colorize: fill-color;
+    }
+
+    // Bolt
+    if (is-charging): Image {
+        source: Images.icon("charging", Size.sz3);
+        colorize: fill-color;
+        height: Size.sz3;
+        x: 10px;
+        y: 3px;
+    }
+}

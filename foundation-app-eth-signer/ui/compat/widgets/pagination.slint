@@ -1,0 +1,134 @@
+// SPDX-FileCopyrightText: 2025 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
+import { Palette, Size, Timings } from "../theme.slint";
+import { TextMd } from "txt.slint";
+
+component Dot inherits Rectangle {
+    in property <int> page-index;
+    in property <bool> selected;
+    width: Size.sz3;
+    height: Size.sz3;
+    border-radius: self.height / 2;
+    background: selected ? Palette.content-brand : Palette.content-disabled;
+    animate background { duration: Timings.prop-change; }
+
+    callback clicked(int);
+
+    TouchArea {
+        clicked => {
+            clicked(page-index);
+        }
+    }
+}
+
+export component PageSelector inherits HorizontalLayout {
+    height: Size.sz4;
+    spacing: Size.sz3;
+    alignment: stretch;
+
+    in property <int> pages: 0;
+    in-out property <int> selected: 0;
+
+    callback clicked-left();
+    callback changed(int);
+    callback clicked-right();
+
+    Rectangle {
+        height: Size.sz4;
+        TouchArea {
+            clicked => {
+                selected = 0;
+                clicked-left();
+            }
+        }
+    }
+
+    for page[page-index] in pages: Dot {
+        selected: page == selected;
+        clicked => {
+            if selected != page-index {
+                selected = page-index;
+                changed(page-index);
+            }
+        }
+    }
+
+    Rectangle {
+        height: Size.sz4;
+        TouchArea {
+            clicked => {
+                selected = max(0, pages - 1);
+                clicked-right();
+            }
+        }
+    }
+}
+
+export component Pagination inherits Rectangle {
+    in property <int> total-pages: 1;
+    in-out property <int> current-page: 0;
+    in property <length> page-spacing: Size.zero;
+    in property <length> dots-padding-top: Size.sz4;
+    in property <length> dots-padding-bottom: Size.zero;
+
+    VerticalLayout {
+        alignment: stretch;
+
+        sgr := SwipeGestureHandler {
+            handle-swipe-right: current-page > 0;
+            handle-swipe-left: current-page < total-pages - 1;
+
+            swiped => {
+                if self.current-position.x > self.pressed-position.x + self.width / 4 {
+                    current-page = max(0, current-page - 1);
+                } else if self.current-position.x < self.pressed-position.x - self.width / 4 {
+                    current-page = min(total-pages - 1, current-page + 1);
+                }
+            }
+
+            HorizontalLayout {
+                property <length> position: -current-page * (root.width + page-spacing);
+                spacing: page-spacing;
+
+                animate position {
+                    duration: 200ms;
+                    easing: ease-in-out;
+                }
+
+                property <length> swipe-offset;
+                x: position + swipe-offset;
+
+                states [
+                    swiping when sgr.swiping: {
+                        swipe-offset: sgr.current-position.x - sgr.pressed-position.x;
+                        out {
+                            animate swipe-offset {
+                                duration: 200ms;
+                                easing: ease-in-out;
+                            }
+                        }
+                    }
+                ]
+
+                @children
+            }
+        }
+
+        // Pagination dots
+        if total-pages > 1: HorizontalLayout {
+            alignment: center;
+            spacing: Size.sz3;
+            padding-top: dots-padding-bottom;
+            padding-bottom: dots-padding-bottom;
+
+            for page in Math.min(total-pages, 10): Dot {
+                page-index: page;
+                selected: page == Math.min(current-page, 9);
+                clicked(idx) => {
+                    current-page = idx;
+                }
+            }
+        }
+    }
+}

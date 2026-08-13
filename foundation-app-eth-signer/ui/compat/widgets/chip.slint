@@ -1,0 +1,59 @@
+// SPDX-FileCopyrightText: 2023 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+
+import {Icon} from "./icon.slint";
+import {HeadingSm} from "./txt.slint";
+import {Palette, Size} from "../theme.slint";
+
+export component Chip inherits Rectangle {
+    // Override inherited properties
+    background: bg-color;
+    border-radius: Size.sz11 / 2;
+    height: Size.sz11;
+    clip: true;
+
+    // Private properties
+    private property <brush> bg-color: selected ? Palette.background-brand : Palette.background-primary-alternative;
+    private property <brush> content-color: selected ? Palette.content-primary-inverse : Palette.content-tertiary;
+
+    // Public properties
+    in property <string> text;
+    in property <string> icon;
+    in property <bool> selected: true;
+
+    // Callbacks
+    callback clicked();
+
+    HorizontalLayout {
+        alignment: center;
+        spacing: 8px;
+
+        if icon != "": VerticalLayout {
+            alignment: center;
+            icon-el := Icon {
+                name: icon;
+                color: content-color;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            HeadingSm {
+                text: root.text;
+                color: content-color;
+            }
+        }
+    }
+
+    touchArea := TouchArea {
+        clicked => {
+            clicked();
+        }
+    }
+
+    states [
+        pressed when touchArea.pressed: {
+            root.background: bg-color.mix(black, 0.8);
+        }
+    ]
+}

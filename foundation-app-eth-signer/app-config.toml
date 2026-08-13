@@ -1,0 +1,29 @@
+# SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
+# SPDX-License-Identifier: MIT
+
+# Foundation application configuration
+app-name = "eth-signer"
+friendly-app-name = "eth-signer"
+launcher-app-name = "eth-signer"
+description = "Ethereum Signer"
+icon = "resources/icon.svg"
+theme = "resources/theme.json"
+app-id = "0x6479c801d668ca185c682acd5484df85"
+version = "0.1.0"
+min-keyos-version = "1.0.0"
+
+[publisher]
+name = "Ethereum Foundation"
+contact-email = "nicolas.consigny@ethereum.org"
+support-url = "https://ethereum.org"
+
+[permissions]
+# fs-generic is needed on top of gui-app: the account config is persisted to
+# Location::AppData, and gui-app only grants read-side fs messages.
+template = ["gui-app", "fs-generic"]
+"os/settings" = ["GetDeviceName", "GetLocale", "GetPrimeColor"]
+# The per-app seed roots the Ethereum keys. Grouped device-secrets.app-scoped-seed,
+# grantOnFirstUse -> the user sees one consent prompt the first time.
+# Never add GetSeed here: the master seed is ungrouped/Foundation-only and an
+# SDK app requesting it is always an author mistake.
+"os/security" = ["GetAppSeed"]

@@ -1,0 +1,83 @@
+// SPDX-FileCopyrightText: 2024 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { Palette, Images, Size, CardColor, Utils, CompatImages } from "../theme.slint";
+
+export component CardCircle inherits Rectangle {
+    width: size;
+    height: size;
+    in property <bool> shadow: true;
+    // clip: false;
+
+    in property <CardColor> line-color: CardColor.blue;
+    in property <length> size: Size.sz8 * 3; // 96px
+
+    private property <length> offset: get-offset();
+
+    function get-offset() -> length {
+        if (size >= 96px) {
+            return (144px - self.width) / 2;
+        } else {
+            return (112px - self.width) / 2;
+        }
+    }
+
+    function get-shadow-name() -> string {
+        if (size >= 96px) {
+            return "images/card-circle-shadow";
+        } else {
+            return "images/card-circle-shadow-64";
+        }
+    }
+
+    // 144px total
+    // 96px circle
+    // TODO: Shadow is not scalable!
+    if shadow: Image {
+        x: -(get-offset());
+        y: -(get-offset());
+        width: root.width + (get-offset() * 2);
+        height: root.height + (get-offset() * 2);
+        source: CompatImages.common(get-shadow-name());
+    }
+
+    // #IF PREVIEW
+    // Rectangle {
+    //     width: root.width;
+    //     height: root.height;
+    //     border-radius: size / 2;
+    //     background: Palette.black.transparentize(0.20);
+    //     border-width: 3px;
+    //     border-color: @linear-gradient(180deg, Utils.get-card-line-top-color(line-color) 0%, Utils.get-card-line-bottom-color(line-color) 100%);
+    // }
+    // #ELSE
+    Image {
+        /*
+            width,
+            height,
+            background_color,
+            background_gradient,
+            border_radius,
+            border_width,
+            border_gradient,
+            outer_border_width,
+            outer_border_gradient,
+            template, (e.g., "lines" means it will draw the lines)
+        */
+
+        source: Utils.line-card(
+            root.width, root.height, Palette.black,
+            [], // No background gradient
+            size / 2, 3px, [
+            { color: Utils.get-card-line-top-color(line-color), stop: 0% },
+            { color: Utils.get-card-line-bottom-color(line-color), stop: 100% }
+        ],
+            Size.zero, [],
+            "");
+        width: root.width;
+        height: root.height;
+    }
+    // #ENDIF
+
+    @children
+}

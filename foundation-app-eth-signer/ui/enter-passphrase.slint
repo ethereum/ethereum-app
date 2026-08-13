@@ -1,0 +1,44 @@
+// SPDX-FileCopyrightText: 2025 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+export enum EnterPassphraseState {
+    Idle,
+    Confirm,
+    Clear,
+    NewAccount,
+}
+
+export global EnterPassphrase {
+    in-out property <EnterPassphraseState> state: EnterPassphraseState.Idle;
+    in-out property <string> passphrase;
+    in-out property <string> fingerprint;
+    in-out property <int> slider-index;
+    in property <bool> no-accounts;
+    in-out property <bool> fingerprint-loading: false;
+
+    callback try(string);
+    callback confirm(string);
+    callback clear-passphrase();
+    callback create-initial-account(string);
+    callback reapply(string);
+    // Switch view locally without notifying Envoy (for Default/Passphrase toggle)
+    callback switch-view(int);
+
+    public function try-passphrase() {
+        self.try(self.passphrase);
+    }
+
+    public function confirm-passphrase() {
+        self.confirm(self.passphrase);
+    }
+
+    public function reapply-passphrase() {
+        self.reapply(self.passphrase);
+    }
+
+    public function clear-state() {
+        self.passphrase = "";
+        self.fingerprint = "";
+        self.fingerprint-loading = false;
+    }
+}

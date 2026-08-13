@@ -1,0 +1,149 @@
+// SPDX-FileCopyrightText: 2024 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { CardColor, UISize, Palette, Size, IconSize } from "../theme.slint";
+import { LightPalette } from "../palettes/light-palette.slint";
+
+import { HeadingSm, TextMd, TextSm } from "./txt.slint";
+import { CardCircle } from "./card-circle.slint";
+import { Icon } from "./icon.slint";
+import { LineCard } from "./line-card.slint";
+import { TextLg } from "txt.slint";
+import { CardPill } from "./card-pill.slint";
+
+export component AccountCard inherits LineCard {
+    in property <string> name;
+    in property <string> icon;
+
+    in property <string> crypto-icon;
+    in property <string> crypto-balance;
+    in property <string> fiat-balance;
+
+    in property <string> network;
+
+    private property <bool> is-large: crypto-icon != "" || crypto-balance != "" || fiat-balance != "";
+    height: is-large ? 144px : 100px;
+
+    VerticalLayout {
+        alignment: stretch;
+
+        HorizontalLayout {
+            vertical-stretch: 1;
+            padding-left: Size.sz6;
+            padding-right: Size.sz4;
+
+            VerticalLayout {
+                alignment: center;
+                HeadingSm {
+                    text: name;
+                    color: Palette.white;
+                }
+            }
+
+            VerticalLayout {
+                alignment: center;
+                if network == "": CardCircle {
+                    size: Size.sz16;
+                    line-color: root.card-color;
+
+                    Icon {
+                        size: IconSize.px40;
+                        name: icon;
+                        color: LightPalette.content-primary-inverse;
+                    }
+                }
+
+                if network != "": CardPill {
+                    width: 156px;
+                    height: Size.sz16;
+
+                    line-color: root.card-color;
+
+                    HorizontalLayout {
+                        spacing: Size.sz1;
+                        alignment: center;
+                        TextLg {
+                            text: network;
+                            color: LightPalette.content-primary-inverse;
+                            vertical-alignment: center;
+                        }
+
+                        VerticalLayout {
+                            alignment: center;
+                            Icon {
+                                size: Size.sz10;
+                                name: icon;
+                                color: LightPalette.content-primary-inverse;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if is-large: VerticalLayout {
+            padding-left: Size.sz2;
+            padding-right: Size.sz2;
+            padding-bottom: Size.sz2;
+            vertical-stretch: 0;
+            Rectangle {
+                height: Size.sz8;
+                background: Palette.background-primary;
+                border-radius: Size.sz4;
+
+                HorizontalLayout {
+                    padding-left: 9px;
+                    padding-right: 13px;
+                    spacing: 9px;
+                    HorizontalLayout {
+                        spacing: Size.sz0_5;
+                        VerticalLayout {
+                            alignment: center;
+                            Icon {
+                                name: crypto-icon;
+                                color: Palette.content-tertiary;
+                                size: Size.sz6;
+                            }
+                        }
+
+                        VerticalLayout {
+                            alignment: center;
+                            TextMd {
+                                text: crypto-balance;
+                                color: Palette.content-primary;
+                            }
+                        }
+                    }
+
+                    VerticalLayout {
+                        alignment: center;
+                        TextMd {
+                            text: fiat-balance;
+                            color: Palette.content-primary;
+                            horizontal-alignment: right;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component Example inherits Rectangle {
+    width: UISize.screen-width;
+    height: 200px;
+    background: grey;
+
+    padding: Size.sz6;
+
+    AccountCard {
+        width: 440px;
+        height: 148px;
+        name: "Bitcoin";
+        icon: "bitcoin";
+        crypto-icon: "bitcoin";
+        crypto-balance: "100.00000000";
+        fiat-balance: "$9,124,650.97";
+        card-color: CardColor.purple;
+    }
+}

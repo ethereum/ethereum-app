@@ -1,0 +1,59 @@
+// SPDX-FileCopyrightText: 2025 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
+import { Palette, Size } from "../theme.slint";
+import { Pagination } from "./pagination.slint";
+import { RawQrCodeCard } from "./qrcode.slint";
+import { BtcAddress } from "./btc-address.slint";
+import { TextMd, TextSm } from "./txt.slint";
+
+export struct QrPagesModel {
+    code: image,
+    header: string,
+    footer: string,
+    footer-is-address: bool,
+}
+
+export component QrPage inherits VerticalLayout {
+    in property <QrPagesModel> item;
+    in property <int> page-idx: 0;
+
+    alignment: center;
+    spacing: Size.sz6;
+    padding: Size.sz4;
+
+    TextMd {
+        text: item.header;
+        color: Palette.content-primary;
+        horizontal-alignment: TextHorizontalAlignment.center;
+    }
+
+    HorizontalLayout {
+        alignment: center;
+        RawQrCodeCard {
+            img: item.code;
+        }
+    }
+
+    if !item.footer-is-address: TextSm {
+        color: Palette.content-primary;
+        horizontal-alignment: TextHorizontalAlignment.center;
+    }
+
+    if item.footer-is-address: BtcAddress {
+        address: item.footer;
+    }
+}
+
+export component QrPages inherits Pagination {
+    in property <[QrPagesModel]> model;
+
+    total-pages: model.length;
+    current-page: 0;
+
+    for item[index] in model: QrPage {
+        width: root.width;
+        item: item;
+        page-idx: index;
+    }
+}

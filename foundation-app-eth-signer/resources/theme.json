@@ -1,0 +1,5 @@
+{
+  "id": "app_theme",
+  "name": "eth-signer",
+  "parent": "base_theme"
+}

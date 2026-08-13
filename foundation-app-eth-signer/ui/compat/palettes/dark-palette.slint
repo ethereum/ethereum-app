@@ -1,0 +1,70 @@
+// SPDX-FileCopyrightText: 2023 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { UIColors } from "./ui-colors.slint";
+
+export global DarkPalette {
+    // Content
+    out property <brush> content-button: UIColors.primary-white;
+    out property <brush> content-button-disabled: UIColors.blue-200;
+    out property <brush> content-primary: UIColors.primary-white;
+    out property <brush> content-secondary: UIColors.neutral-100;
+    out property <brush> content-tertiary: UIColors.neutral-600;
+    out property <brush> content-primary-inverse: UIColors.neutral-950;
+    out property <brush> content-secondary-inverse: UIColors.neutral-900;
+    out property <brush> content-tertiary-inverse: UIColors.neutral-700;
+    out property <brush> content-disabled: UIColors.neutral-800;
+    out property <brush> content-brand: UIColors.blue-400;
+    out property <brush> content-copper-brand: UIColors.dark-copper-500;
+    out property <brush> content-lightcopper-brand: UIColors.light-copper-500;
+    out property <brush> content-link: UIColors.blue-400;
+    out property <brush> content-link-hover: UIColors.blue-300;
+    out property <brush> content-link-pressed: UIColors.blue-200;
+    out property <brush> content-notice: UIColors.light-copper-500;
+    out property <brush> content-notice-bold: UIColors.light-copper-300;
+    out property <brush> content-negative: UIColors.red-500;
+    out property <brush> content-negative-bold: UIColors.red-300;
+    out property <brush> content-positive: UIColors.green-500;
+    out property <brush> content-positive-bold: UIColors.green-300;
+    
+    // Background
+    out property <brush> background-primary: UIColors.neutral-950;
+    out property <brush> background-primary-alternative: UIColors.neutral-800;
+    out property <brush> background-hover: UIColors.neutral-900;
+    out property <brush> background-pressed: UIColors.neutral-800;
+    out property <brush> background-selected: UIColors.blue-800;
+    out property <brush> background-disabled: UIColors.neutral-900;
+    out property <brush> background-inverse: UIColors.primary-white;
+    out property <brush> background-brand: UIColors.blue-400;
+    out property <brush> background-brand-hover: UIColors.blue-300;
+    out property <brush> background-brand-pressed: UIColors.blue-200;
+    out property <brush> background-brand-disabled: UIColors.blue-600;
+    out property <brush> background-info: UIColors.blue-400;
+    out property <brush> background-info-subtle: UIColors.blue-800;
+    out property <brush> background-notice: UIColors.light-copper-500;
+    out property <brush> background-notice-subtle: UIColors.light-copper-800;
+    out property <brush> background-negative: UIColors.red-500;
+    out property <brush> background-negative-subtle: UIColors.red-900;
+    out property <brush> background-positive: UIColors.green-500;
+    out property <brush> background-positive-subtle: UIColors.green-900;
+
+    // Special purpose
+    out property <brush> circular-progress-background: UIColors.neutral-600;
+
+    // Border
+    out property <brush> border-primary: UIColors.neutral-500;
+    out property <brush> border-secondary: UIColors.neutral-700;
+    out property <brush> border-tertiary: UIColors.neutral-900;
+    out property <brush> border-disabled: UIColors.neutral-800;
+    out property <brush> border-brand: UIColors.blue-400;
+    out property <brush> border-inverse: UIColors.neutral-950;
+    out property <brush> border-focus: UIColors.blue-400;
+    out property <brush> border-info: UIColors.blue-400;
+    out property <brush> border-notice: UIColors.light-copper-500;
+    out property <brush> border-negative: UIColors.red-500;
+    out property <brush> border-positive: UIColors.green-500;
+
+    // Overlay
+    out property <brush> overlay-50: UIColors.primary-black.transparentize(0.5);
+    out property <brush> overlay-50-inverse: UIColors.primary-white.transparentize(0.5);
+}

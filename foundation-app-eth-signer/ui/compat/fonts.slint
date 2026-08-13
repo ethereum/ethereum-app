@@ -1,0 +1,93 @@
+// SPDX-FileCopyrightText: 2023 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+// When defining a font for a theme, specify all of these properties
+export struct FontInfo {
+    family: string,
+    size: length,
+    weight: int,
+    italic: bool,
+    letter-spacing: length,
+}
+
+export enum FontSize {
+    xs,
+    sm,
+    md,
+    lg,
+    xl,
+    time
+}
+
+export global Font {
+    out property <FontInfo> heading-xl: { family: "Montserrat", size: 40px, weight: 600, italic: false, letter-spacing: 0px };
+    out property <FontInfo> heading-lg: { family: "Montserrat", size: 32px, weight: 600, italic: false, letter-spacing: 0px };
+    out property <FontInfo> heading-md: { family: "Montserrat", size: 28px, weight: 600, italic: false, letter-spacing: 0px };
+    out property <FontInfo> heading-sm: { family: "Montserrat", size: 24px, weight: 600, italic: false, letter-spacing: 0px };
+    out property <FontInfo> heading-xs: { family: "Montserrat", size: 22px, weight: 600, italic: false, letter-spacing: 0px };
+
+    out property <FontInfo> text-time: { family: "Montserrat", size: 44px, weight: 350, italic: false, letter-spacing: 0px };
+    out property <FontInfo> text-xl: { family: "Montserrat", size: 26px, weight: 400, italic: false, letter-spacing: 0px };
+    out property <FontInfo> text-lg: { family: "Montserrat", size: 24px, weight: 400, italic: false, letter-spacing: 0px };
+    out property <FontInfo> text-md: { family: "Montserrat", size: 22px, weight: 500, italic: false, letter-spacing: 0px };
+    out property <FontInfo> text-sm: { family: "Montserrat", size: 20px, weight: 500, italic: false, letter-spacing: 0px };
+    out property <FontInfo> text-xs: { family: "Montserrat", size: 18px, weight: 500, italic: false, letter-spacing: 0px };
+
+    out property <FontInfo> text-xl-bold: { family: "Montserrat", size: 26px, weight: 600, italic: false, letter-spacing: 0px };
+    out property <FontInfo> text-lg-bold: { family: "Montserrat", size: 24px, weight: 600, italic: false, letter-spacing: 0px };
+    out property <FontInfo> text-md-bold: { family: "Montserrat", size: 22px, weight: 600, italic: false, letter-spacing: 0px };
+    out property <FontInfo> text-sm-bold: { family: "Montserrat", size: 20px, weight: 700, italic: false, letter-spacing: 0px };
+    out property <FontInfo> text-xs-bold: { family: "Montserrat", size: 18px, weight: 700, italic: false, letter-spacing: 0px };
+}
+
+export global FontHelpers {
+    pure public function get-text-font(size: FontSize, bold: bool) -> FontInfo {
+        if (bold) {
+            if (size == FontSize.xs) {
+                return Font.text-xs-bold;
+            } else if (size == FontSize.sm) {
+                return Font.text-sm-bold;
+            } else if (size == FontSize.md) {
+                return Font.text-md-bold;
+            } else if (size == FontSize.lg) {
+                return Font.text-lg-bold;
+            } else if (size == FontSize.xl) {
+                return Font.text-xl-bold;
+            } else {
+                return Font.text-md-bold;
+            }
+        } else {
+            if (size == FontSize.xs) {
+                return Font.text-xs;
+            } else if (size == FontSize.sm) {
+                return Font.text-sm;
+            } else if (size == FontSize.md) {
+                return Font.text-md;
+            } else if (size == FontSize.lg) {
+                return Font.text-lg;
+            } else if (size == FontSize.xl) {
+                return Font.text-xl;
+            } else if (size == FontSize.time) {
+                return Font.text-time;
+            } else {
+                return Font.text-md;
+            }
+        }
+    }
+
+    pure public function get-header-font(size: FontSize) -> FontInfo {
+        if (size == FontSize.xs) {
+            return Font.heading-xs;
+        } else if (size == FontSize.sm) {
+            return Font.heading-sm;
+        } else if (size == FontSize.md) {
+            return Font.heading-md;
+        } else if (size == FontSize.lg) {
+            return Font.heading-lg;
+        } else if (size == FontSize.xl) {
+            return Font.heading-xl;
+        } else {
+            return Font.heading-md;
+        }
+    }
+}

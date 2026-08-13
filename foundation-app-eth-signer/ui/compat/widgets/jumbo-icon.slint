@@ -1,0 +1,27 @@
+// SPDX-FileCopyrightText: 2024 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { Icon } from "./icon.slint";
+import { Size, IconSize, Images, UISize , CompatImages} from "../theme.slint";
+
+export component JumboIcon {
+    in property <string> name: "jumbo-circle";
+
+    width: IconSize.px184;
+    height: IconSize.px184;
+
+    Image {
+        source: CompatImages.common("images/" + root.name);
+        width: parent.width;
+        height: parent.height;
+    }
+
+    // Add a space for children centered within the circle
+    VerticalLayout {
+        alignment: center;
+        HorizontalLayout {
+            alignment: center;
+            @children
+        }
+    }
+}

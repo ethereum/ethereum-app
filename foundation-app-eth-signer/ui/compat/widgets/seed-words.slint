@@ -1,0 +1,77 @@
+// SPDX-FileCopyrightText: 2025 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
+import { Palette, Size } from "../theme.slint";
+import { TextMd } from "txt.slint";
+import { Pagination } from "./pagination.slint";
+
+component WordItem inherits Rectangle {
+    in property <int> index;
+    in property <string> word;
+    height: Size.sz14;
+    width: 216px;
+    background: Palette.background-pressed;
+    border-radius: self.height / 2;
+    HorizontalLayout {
+        alignment: start;
+        padding-left: Size.sz4;
+        padding-right: Size.sz4;
+        num := TextMd {
+            text: "\{1 + index}.";
+            color: Palette.content-tertiary;
+            width: Size.sz8;
+            vertical-alignment: TextVerticalAlignment.center;
+            horizontal-alignment: TextHorizontalAlignment.left;
+        }
+
+        TextMd {
+            text: word;
+            overflow: TextOverflow.elide;
+            color: Palette.content-primary;
+            width: parent.width - num.width - parent.padding-left - parent.padding-right;
+            vertical-alignment: TextVerticalAlignment.center;
+            horizontal-alignment: TextHorizontalAlignment.left;
+        }
+    }
+}
+
+export component SeedPage inherits VerticalLayout {
+    in property <[string]> words;
+    in property <int> columns: 2;
+    in property <int> rows: 6;
+    in property <int> page-idx: 0;
+
+    spacing: Size.sz4;
+
+    for row in rows: HorizontalLayout {
+        alignment: center;
+        spacing: Size.sz4;
+
+        for col in columns: WordItem {
+            property <int> word-idx: (page-idx * rows * columns) + (row + col * rows);
+            visible: word-idx < words.length;
+
+            index: word-idx;
+            word: word-idx < words.length ? words[word-idx] : "";
+        }
+    }
+}
+
+export component SeedWords inherits Pagination {
+    in property <[string]> words;
+    in property <int> columns: 2;
+    in property <int> rows: 6;
+
+    private property <int> words-per-page: rows * columns;
+
+    total-pages: Math.ceil(words.length / words-per-page);
+    current-page: 0;
+
+    for page-idx in self.total-pages: SeedPage {
+        width: root.width;
+        words: words;
+        columns: columns;
+        rows: rows;
+        page-idx: page-idx;
+    }
+}

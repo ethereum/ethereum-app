@@ -1,0 +1,370 @@
+// SPDX-FileCopyrightText: 2025 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { AccountCard, BasePage, Icon, IconButton, NavHeader, OverlayMenu, PopupMenuItem, Shadow, Shield, TextSm, SegmentedControl } from "../compat/widgets.slint";
+import { Importance, CurrentTheme, UISize, Palette, Size, CardColor } from "../compat/theme.slint";
+import { TR2, TrId } from "../gen/tr.slint";
+
+import { AccountView, Callbacks } from "../callbacks.slint";
+import { Navigate } from "../gen/navigate.slint";
+import { VerifyAddress } from "../verify-address.slint";
+import { EnterPassphrase } from "../enter-passphrase.slint";
+
+component ActionItem inherits VerticalLayout {
+    in property <string> icon;
+    in property <string> text;
+
+    callback clicked();
+
+    alignment: center;
+    width: 130px;
+
+    Rectangle {
+        VerticalLayout {
+            alignment: start;
+            spacing: Size.sz3;
+
+            HorizontalLayout {
+                alignment: center;
+                Rectangle {
+                    border-width: 1px;
+                    border-radius: Size.sz10;
+                    border-color: Palette.border-tertiary;
+
+                    width: Size.sz14;
+                    height: Size.sz14;
+
+                    HorizontalLayout {
+                        alignment: center;
+
+                        VerticalLayout {
+                            alignment: center;
+
+                            Icon {
+                                name: icon;
+                                color: Palette.content-primary;
+                                size: Size.sz8;
+                            }
+                        }
+                    }
+                }
+            }
+
+            HorizontalLayout {
+                alignment: center;
+                TextSm {
+                    text: text;
+                    horizontal-alignment: center;
+                    width: 90px;
+                }
+            }
+        }
+
+        TouchArea {
+            clicked => {
+                root.clicked();
+            }
+        }
+    }
+}
+
+component AccountCollapsible inherits Rectangle {
+    in property <bool> open;
+    in property <string> name;
+    in property <string> icon;
+    in property <CardColor> card-color;
+    in property <string> crypto-icon;
+    in property <string> crypto-balance;
+    in property <string> fiat-balance;
+
+    callback clicked();
+
+    Shadow { }
+
+    Rectangle {
+        background: Palette.background-primary;
+        border-radius: Size.sz6;
+        border-color: Palette.border-tertiary;
+        border-width: Size.sz0_25;
+    }
+
+    VerticalLayout {
+        AccountCard {
+            name: root.name;
+            icon: root.icon;
+            crypto-icon: root.crypto-icon;
+            crypto-balance: root.crypto-balance;
+            fiat-balance: root.fiat-balance;
+            card-color: root.card-color;
+            clicked => {
+                root.clicked();
+            }
+        }
+
+        Rectangle {
+            height: open ? 140px : 0px;
+            visible: open;
+            clip: true;
+
+            animate height {
+                duration: 200ms;
+                easing: ease-in-out;
+            }
+
+            @children
+        }
+    }
+}
+
+component AccountActions inherits HorizontalLayout {
+    in property <string> account-id;
+
+    alignment: space-between;
+
+    ActionItem {
+        icon: "list";
+        text: TR2.lookup(TrId.AccountsVerifyAddress);
+        clicked => {
+            VerifyAddress.verify-address({ account-id: account-id, show-view-all: true });
+        }
+    }
+
+    ActionItem {
+        icon: "info";
+        text: TR2.lookup(TrId.AccountsAccountDetails);
+        clicked => {
+            Navigate.account({ account-id: account-id }, { });
+        }
+    }
+}
+
+component AccountViewCard inherits AccountCollapsible {
+    in property <AccountView> acct;
+    out property <string> account-id: acct.id;
+
+    name: acct.name;
+
+    AccountActions {
+        account-id: account-id;
+    }
+}
+
+component AccountsPage inherits BasePage {
+    property <bool> menu-open: false;
+    property <string> selected: "";
+    property <bool> has-passphrase: EnterPassphrase.passphrase != "";
+
+    VerticalLayout {
+        padding-left: 5px;
+        padding-right: 5px;
+
+        NavHeader {
+            title: TR2.lookup(TrId.AccountsTitle);
+            left-icon: (has-passphrase && EnterPassphrase.slider-index == 1) ? "shield-passphrase" : "";
+            right-icon: "ellipsis";
+
+            clicked => {
+                Navigate.enter-passphrase({ });
+            }
+
+            right-clicked => {
+                menu-open = true;
+            }
+        }
+
+        Shield {
+            VerticalLayout {
+                padding-left: Size.sz6;
+                padding-right: Size.sz6;
+                // TODO: this is exactly Size.sz6 in the design, whats up?
+                spacing: Size.sz6 - 2px;
+                alignment: stretch;
+
+                if has-passphrase: SegmentedControl {
+                    labels: [TR2.lookup(TrId.PassphraseDefault), TR2.lookup(TrId.PassphrasePassphrase)];
+                    icons: ["", "shield-passphrase"];
+                    selected-index: EnterPassphrase.slider-index;
+                    touch-factor: 1.5;
+
+                    changed(label, index) => {
+                        EnterPassphrase.slider-index = index;
+                        EnterPassphrase.switch-view(index);
+                    }
+                }
+
+                for acct[index] in Callbacks.accounts: VerticalLayout {
+                    AccountViewCard {
+                        acct: acct;
+                        icon: "device";
+                        card-color: acct.color;
+                        open: selected == acct.id;
+                        clicked => {
+                            if (selected == acct.id) {
+                                selected = "";
+                            } else {
+                                selected = acct.id;
+                            }
+                        }
+                    }
+                }
+
+                Rectangle { }
+            }
+        }
+
+        HorizontalLayout {
+            alignment: end;
+
+            padding-left: Size.sz5;
+            padding-right: Size.sz5;
+
+            padding-bottom: Size.sz4;
+
+            IconButton {
+                icon: "scan-qr";
+                importance: Importance.normal;
+                icon-size: Size.sz12;
+                size: Size.sz12;
+                clicked => {
+                    Callbacks.scan-clicked();
+                }
+            }
+        }
+    }
+
+    if menu-open: OverlayMenu {
+        PopupMenuItem {
+            label: TR2.lookup(TrId.AccountsMenuCreateAccount);
+            icon: "plus";
+            first: true;
+            clicked => {
+                Navigate.create-account({ });
+                menu-open = false;
+            }
+        }
+
+        PopupMenuItem {
+            label: has-passphrase ? TR2.lookup(TrId.AccountsMenuClearPassphrase) : TR2.lookup(TrId.AccountsMenuApplyPassphrase);
+            icon: has-passphrase ? "shield-x" : "shield-plus";
+            clicked => {
+                menu-open = false;
+                Navigate.enter-passphrase({ });
+            }
+        }
+
+        PopupMenuItem {
+            label: TR2.lookup(TrId.AccountsMenuViewArchive);
+            icon: "archive";
+            clicked => {
+                menu-open = false;
+                Callbacks.set-archive-mode(true);
+            }
+        }
+
+        PopupMenuItem {
+            label: TR2.lookup(TrId.AccountsMenuSettings);
+            icon: "menu";
+            last: true;
+            clicked => {
+                menu-open = false;
+                Navigate.settings({ });
+            }
+        }
+
+        touched-off => {
+            menu-open = false;
+        }
+    }
+}
+
+component AccountStatic inherits Rectangle {
+    in property <AccountView> acct;
+    in property <string> icon;
+    in property <CardColor> card-color;
+    in property <string> crypto-icon;
+    in property <string> crypto-balance;
+    in property <string> fiat-balance;
+
+    out property <string> account-id: acct.id;
+    property <string> name: acct.name;
+
+    callback clicked();
+
+    Shadow { }
+
+    Rectangle {
+        background: Palette.background-primary;
+        border-radius: Size.sz6;
+        border-color: Palette.border-tertiary;
+        border-width: Size.sz0_25;
+    }
+
+    VerticalLayout {
+        AccountCard {
+            width: 448px;
+            height: 112px;
+            name: root.name;
+            icon: root.icon;
+            crypto-icon: root.crypto-icon;
+            crypto-balance: root.crypto-balance;
+            fiat-balance: root.fiat-balance;
+            card-color: root.card-color;
+            clicked => {
+                root.clicked();
+            }
+        }
+    }
+}
+
+component ArchivePage inherits BasePage {
+    property <bool> has-passphrase: EnterPassphrase.passphrase != "";
+
+    VerticalLayout {
+        NavHeader {
+            title: TR2.lookup(TrId.AccountArchiveTitle);
+            left-icon: "chevron-left";
+
+            clicked => {
+                Callbacks.set-archive-mode(false);
+            }
+        }
+
+        VerticalLayout {
+            padding-left: Size.sz4;
+            padding-right: Size.sz4;
+            padding-top: Size.sz4;
+
+            Flickable {
+                VerticalLayout {
+                    spacing: Size.sz6;
+
+                    if has-passphrase: SegmentedControl {
+                        labels: [TR2.lookup(TrId.PassphraseDefault), TR2.lookup(TrId.PassphrasePassphrase)];
+                        icons: ["", "shield-passphrase"];
+                        selected-index: EnterPassphrase.slider-index;
+                        touch-factor: 1.5;
+
+                        changed(label, index) => {
+                            EnterPassphrase.slider-index = index;
+                            EnterPassphrase.switch-view(index);
+                        }
+                    }
+
+                    for acct[index] in Callbacks.accounts: AccountStatic {
+                        acct: acct;
+                        icon: "device";
+                        card-color: acct.color;
+                        clicked => {
+                            Navigate.account({ account-id: self.account-id }, { });
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component HomePage inherits Rectangle {
+    if !Callbacks.archive-mode: AccountsPage { }
+    if Callbacks.archive-mode: ArchivePage { }
+}

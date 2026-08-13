@@ -1,0 +1,96 @@
+// SPDX-FileCopyrightText: 2023 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import {Palette, Size, Images} from "../theme.slint";
+import {Circle} from "./circle.slint";
+import {Icon} from "./icon.slint";
+import {CurrentTheme} from "../theme.slint";
+import {DarkPalette} from "../palettes/dark-palette.slint";
+import {LightPalette} from "../palettes/light-palette.slint";
+
+export component SliderBrightness inherits Rectangle {
+    // Override inherited properties
+    height: Size.sz11;
+    clip: false;    // allow handle to stick out
+
+    // Public properties
+    in property <float> maximum: 100;
+    in property <float> minimum: 0;
+    in-out property <float> value;
+    in property <bool> enabled: true;
+    in property <bool> is-dark: CurrentTheme.is-dark;
+    in property <length> touch-padding: Size.sz4;
+
+    callback changed(float);
+
+    // Private properties
+    private property <float> range: maximum - minimum;
+
+    function calculate-value(mouse-x: length) -> float {
+        return root.minimum + max(0, min(range, ((max(handle.width * 2, min(mouse-x, track-touch.width - handle.width * 2)) - handle.width * 2) / track.width) * range));
+    }
+
+    HorizontalLayout {
+        // Per Figma it should be sz3 but then sz3 makes the handle overflow into the icons on the left or right
+        spacing: Size.sz6;
+
+        VerticalLayout {
+            alignment: center;
+            Icon {
+                name: "brightness-left";
+                size: Size.sz6;
+                color: is-dark ? DarkPalette.content-tertiary : LightPalette.content-tertiary;
+            }
+        }
+
+        track-container := VerticalLayout {
+            alignment: center;
+            track := Image {
+                height: Size.sz2;
+                source: Images.common("images/bg-slider");
+                image-fit: ImageFit.fill;
+
+                handle := Circle {
+                    size: Size.sz12;
+                    background: is-dark ? DarkPalette.content-tertiary : LightPalette.content-tertiary;
+                    y: -(self.height / 2) + track.height / 2;
+                    x: ((track.width) * (root.value - minimum) / range) - (self.width / 2);
+                    Circle {
+                        size: Size.sz12 / 2;
+                        background: is-dark ? DarkPalette.content-primary : LightPalette.content-primary;
+                    }
+                }
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            Icon {
+                name: "brightness-right";
+                size: Size.sz6;
+                color: is-dark ? DarkPalette.content-primary : LightPalette.content-primary;
+            }
+        }
+    }
+
+    track-touch := TouchArea {
+        x: track-container.x - handle.width * 2;
+        width: track.width + handle.width * 4;
+        y: -1 * touch-padding;
+        height: root.height + 2 * touch-padding;
+        enabled: root.enabled;
+
+        clicked => {
+            if self.enabled && self.pressed {
+                root.value = root.calculate-value(self.mouse-x);
+                root.changed(root.value);
+            }
+        }
+        moved => {
+            if self.enabled && self.pressed {
+                root.value = root.calculate-value(self.mouse-x);
+                root.changed(root.value);
+            }
+        }
+    }
+}

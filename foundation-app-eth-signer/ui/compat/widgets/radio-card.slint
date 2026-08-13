@@ -1,0 +1,61 @@
+// SPDX-FileCopyrightText: 2023 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+
+import {Icon} from "./icon.slint";
+import {Circle} from "./circle.slint";
+import {HeadingSm} from "../widgets/txt.slint";
+import {Palette, Size} from "../theme.slint";
+
+export component RadioCard inherits Rectangle {
+    // Override inherited properties
+    border-radius: Size.sz4;
+    border-width: checked ? 2px : 2px;
+    border-color: checked ? Palette.border-brand : Palette.border-disabled;
+    background: checked ? Palette.background-primary : Palette.background-disabled;
+    clip: true;
+
+    // Public properties
+    in property <string> id;
+    in property <string> label: "Testing";
+    in property <string> icon: "shield";
+    in property <bool> enabled: true;
+    in property <bool> controlled: false;
+    in-out property <bool> checked;
+
+    // Callbacks
+    callback clicked(string);
+
+    HorizontalLayout {
+        padding: Size.sz4;
+        spacing: Size.sz4;
+
+        VerticalLayout {
+            alignment: center;
+            Icon {
+                name: icon;
+                color: checked ? Palette.content-brand : Palette.content-tertiary;
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            HeadingSm {
+                text: label;
+                color: checked ? Palette.content-brand : Palette.content-tertiary;
+                wrap: word-wrap;
+            }
+        }
+    }
+
+    touchArea := TouchArea {
+        clicked => {
+            if (enabled) {
+                if (!controlled) {
+                    checked = !checked;
+                }
+                clicked(id);
+            }
+        }
+    }
+}

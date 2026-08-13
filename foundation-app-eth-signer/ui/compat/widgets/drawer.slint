@@ -1,0 +1,100 @@
+// SPDX-FileCopyrightText: 2025 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { Palette, Size } from "../theme.slint";
+import { Shadow } from "./shadow.slint";
+
+export component Drawer inherits Rectangle {
+    in-out property <bool> open: false;
+    in property <length> drawer-height;
+    in property <duration> delay: 300ms;
+    in property <easing> easing: ease-in-out;
+
+    callback focus-changed-event(bool);
+
+    background: open ? Palette.overlay-50 : Palette.transparent;
+
+    // animate background {
+    //     duration: delay;
+    //     easing: easing;
+    // }
+
+    // touch area to stop touches from going through
+    TouchArea {
+        enabled: open;
+    }
+
+    // touch area above the drawer to close it
+    TouchArea {
+        enabled: open;
+        y: 0;
+        height: parent.height - drawer-height;
+        clicked => {
+            root.open = false;
+        }
+    }
+
+    forward-focus: focus-handler;
+    focus-handler := FocusScope {
+        enabled: root.open;
+        focus-changed-event => {
+            root.focus-changed-event(self.has-focus);
+        }
+    }
+
+    Rectangle {
+        height: drawer-height;
+
+        y: open ? parent.height - self.height : parent.height;
+
+        animate y {
+            duration: delay;
+            easing: easing;
+        }
+
+        Shadow {
+            visible: open;
+        }
+
+        Rectangle {
+            background: Palette.background-primary;
+
+            border-top-left-radius: Size.sz6;
+            border-top-right-radius: Size.sz6;
+
+            VerticalLayout {
+                alignment: start;
+
+                padding-left: Size.sz8;
+                padding-right: Size.sz8;
+
+                Rectangle {
+                    height: Size.sz15;
+
+                    Rectangle {
+                        y: parent.height / 2 - self.height / 2;
+                        height: Size.sz1;
+                        width: Size.sz10;
+                        background: Palette.border-secondary;
+                        border-radius: Size.sz8;
+                    }
+
+                    SwipeGestureHandler {
+                        property <length> swipe-threshold: Size.sz10;
+                        property <length> dy: self.current-position.y - self.pressed-position.y;
+
+                        handle-swipe-down: true;
+
+                        swiped => {
+                            if (dy > swipe-threshold) {
+                                root.open = false;
+                            }
+                        }
+                    }
+                }
+
+                @children
+            }
+        }
+    }
+}

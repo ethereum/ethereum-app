@@ -1,0 +1,29 @@
+// SPDX-FileCopyrightText: 2024 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { Icon } from "./icon.slint";
+import { CardCircle } from "./card-circle.slint";
+import { Palette, Size, Images, CardColor, IconSize } from "../theme.slint";
+
+export component CircleIcon inherits Rectangle {
+    in property <string> icon: "passport";
+    in property <CardColor> line-color: CardColor.blue;
+    in property <length> size: Size.sz16;
+    in property <length> icon-size: IconSize.px40;
+    in property <bool> shadow: true;
+
+    width: size;
+    height: size;
+
+    CardCircle {
+        size: size;
+        line-color: line-color;
+        shadow: shadow;
+    }
+
+    Icon {
+        name: icon;
+        color: Palette.white;
+        size: icon-size;
+    }
+}

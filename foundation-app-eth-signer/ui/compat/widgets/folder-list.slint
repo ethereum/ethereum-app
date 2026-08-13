@@ -1,0 +1,113 @@
+// SPDX-FileCopyrightText: 2024 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { Panel } from "./panel.slint";
+import { Icon } from "./icon.slint";
+import { TextSm, TextMd } from "./txt.slint";
+import { Divider } from "./divider.slint";
+import { Palette, Size, UISize } from "../theme.slint";
+
+export struct FolderItemModel {
+    label: string,
+    icon: string,
+    color: color,
+    enabled: bool,
+}
+
+component FolderItem inherits Rectangle {
+    height: Size.sz16;
+    in property <FolderItemModel> item;
+    in property <int> index;
+    callback selected(int);
+    HorizontalLayout {
+        height: parent.height;
+        callback selected(int);
+        spacing: Size.sz4;
+        padding: Size.sz4;
+
+        VerticalLayout {
+            alignment: center;
+            Icon {
+                name: item.icon == "" ? "folder" : item.icon;
+                color: item.color;
+            }
+        }
+
+        TextMd {
+            text: item.label;
+            color: item.color;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+    }
+
+    touch := TouchArea {
+        clicked => {
+            selected(index);
+        }
+    }
+
+    states [
+        pressed when touch.pressed: {
+            root.background: Palette.background-disabled;
+        }
+    ]
+}
+
+export component FolderList inherits Panel {
+    width: UISize.popup-menu-width;
+
+    // Callbacks
+    callback selected(int); // Returns which item was selected
+
+    in property <[FolderItemModel]> items;
+    VerticalLayout {
+        spacing: 0;
+
+        for item[index] in items: VerticalLayout {
+            FolderItem {
+                height: Size.sz16;
+                item: item;
+                index: index;
+                selected => {
+                    root.selected(index);
+                }
+            }
+
+            if (index < items.length - 1): Divider { }
+        }
+    }
+}
+
+export component Test inherits Rectangle {
+    width: 500px;
+    height: 500px;
+
+    VerticalLayout {
+        width: parent.width;
+        height: parent.height;
+        alignment: start;
+        spacing: Size.sz4;
+        HorizontalLayout {
+            width: parent.width;
+            alignment: center;
+            FolderList {
+                items: [
+                    { label: "External", icon: "usb", color: Palette.content-primary },
+                    { label: "Folder 1", color: Palette.content-primary },
+                    { label: "Folder 2", color: Palette.content-primary },
+                    { label: "Subfolder", color: Palette.content-notice-bold },
+                ];
+                selected(index) => {
+                    text.text = "Selected Index: \{index}";
+                }
+            }
+        }
+
+        text := TextMd {
+            text: "Selected Index: None";
+            color: Palette.content-primary;
+            horizontal-alignment: center;
+        }
+    }
+}

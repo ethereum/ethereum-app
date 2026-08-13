@@ -1,0 +1,63 @@
+// SPDX-FileCopyrightText: 2023 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { Palette, Size, Timings, Images, Utils } from "../theme.slint";
+import { TextLg, TextMd } from "./txt.slint";
+
+export component ProgressBar inherits Rectangle {
+    // Override inherited properties
+    background: Palette.background-primary;
+    border-radius: Size.sz8 / 2;
+    height: Size.sz8;
+    clip: true;
+    border-width: 1px;
+    border-color: Palette.background-primary.darker(0.1);
+
+    // Private properties
+    private property <bool> text-inside: percent > 25%;
+    private property <bool> is-animating: false;
+    private property <length> anim-offset: 0;
+
+    // Public properties
+    in property <string> id;
+    in property <percent> percent;
+    in property <int> precision: 0;
+    in property <bool> indeterminate;
+
+    HorizontalLayout {
+        width: 100%;
+        padding: Size.sz1;
+        HorizontalLayout {
+            width: parent.width - Size.sz1 * 2;
+            Rectangle {
+                background: Palette.background-brand;
+                width: indeterminate ? 100% : percent;
+                border-radius: self.height / 2;
+                clip: true;
+
+                animate width { duration: Timings.prop-change; }
+
+                if indeterminate: lines := Image {
+                    // 56px is the gap between the lines
+                    x: -56px + (56px * mod(animation-tick(),500ms) / 500ms);
+                    source: Images.common("images/diagonal-lines");
+                    colorize: Palette.background-brand.darker(0.2);
+                }
+                if !indeterminate && text-inside: TextLg {
+                    vertical-alignment: center;
+                    horizontal-alignment: center;
+                    text: Utils.percent-to-string(percent, precision);
+                    color: Palette.white;
+                }
+            }
+
+            if !indeterminate && !text-inside: TextMd {
+                vertical-alignment: center;
+                horizontal-alignment: left;
+                padding-left: 10px;
+                text: Utils.percent-to-string(percent, precision);
+                color: Palette.content-tertiary;
+            }
+        }
+    }
+}

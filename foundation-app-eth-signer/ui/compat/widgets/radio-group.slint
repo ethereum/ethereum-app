@@ -1,0 +1,66 @@
+// SPDX-FileCopyrightText: 2023 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import {Palette, Size} from "../theme.slint";
+
+import {RadioButton} from "./radio-button.slint";
+import {TextMd} from "./txt.slint";
+
+export struct RadioGroupModel {
+    name: string,
+    value: string,
+    disabled: bool,
+}
+
+export component RadioGroup inherits VerticalLayout {
+    spacing: Size.sz2;
+
+    // Private properties
+
+    // Public properties
+    in property <[RadioGroupModel]> model: [{ name: "Yes", value: "1" }, { name: "No", value: "0" }];
+    in-out property <int> selected-index: 0;
+    in-out property <string> selected-value;
+    in property <bool> labels-right;
+    in property <brush> label-color: Palette.content-primary;
+
+    // Callbacks
+    callback changed(int, string);
+
+    function item-changed(index: int, value: string) {
+        self.selected-index = index;
+        self.selected-value = value;
+        changed(index, value);
+    }
+
+    for entry[index] in model: HorizontalLayout {
+        spacing: Size.sz4;
+        if !labels-right: TextMd {
+            text: entry.name;
+            vertical-alignment: TextVerticalAlignment.center;
+        }
+        RadioButton {
+            height: Size.sz12;
+            checked: index == selected_index;
+            controlled: true;
+            enabled: !entry.disabled;
+            clicked => {
+                item-changed(index, entry.value);
+            }
+        }
+
+        if labels-right: TextMd {
+            text: entry.name;
+            vertical-alignment: TextVerticalAlignment.center;
+            color: label-color;
+
+            TouchArea {
+                clicked => {
+                    if (!entry.disabled) {
+                        item-changed(index, entry.value);
+                    }
+                }
+            }
+        }
+    }
+}

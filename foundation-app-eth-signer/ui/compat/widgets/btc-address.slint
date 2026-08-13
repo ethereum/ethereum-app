@@ -1,0 +1,81 @@
+// SPDX-FileCopyrightText: 2025 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { Utils } from "../utils.slint";
+import { Palette, Size } from "../theme.slint";
+import { DynamicText } from "txt.slint";
+import { FontSize } from "../fonts.slint";
+
+component AddressPart inherits DynamicText {
+    vertical-alignment: center;
+    horizontal-alignment: left;
+    wrap: no-wrap;
+}
+
+export component BtcAddress inherits VerticalLayout {
+    in property <string> address;
+    in property <FontSize> font-size: FontSize.sm;
+    in property <bool> bold: false;
+    in property <color> primary-color: Palette.content-primary;
+    in property <color> secondary-color: Palette.content-tertiary;
+    in property <int> items-per-row: 8;
+    in property <LayoutAlignment> horizontal-alignment: center;
+    in property <length> section-spacing: Size.sz1;
+
+    property <[string]> split: Utils.split-by-length(address, 4);
+
+    function get-color(index: int) -> color {
+        return Math.mod(index, 2) == 0 ? primary-color : secondary-color;
+    }
+
+    spacing: Size.sz0_5;
+
+    for row in Math.ceil(split.length / items-per-row): HorizontalLayout {
+        spacing: section-spacing;
+        alignment: horizontal-alignment;
+
+        for col in items-per-row: AddressPart {
+            color: get-color(row * items-per-row + col);
+            size: font-size;
+            bold: bold;
+            text: split[row * items-per-row + col];
+        }
+    }
+}
+
+export component CompressedBtcAddress inherits HorizontalLayout {
+    in property <string> address;
+    in property <FontSize> font-size: FontSize.sm;
+    in property <bool> bold: false;
+    in property <color> primary-color: Palette.content-primary;
+    in property <color> secondary-color: Palette.content-tertiary;
+
+    property <[string]> split: Utils.split-by-length(address, 4);
+
+    alignment: start;
+    spacing: Size.sz1;
+
+    function get-color(index: int) -> color {
+        return Math.mod(index, 2) == 0 ? primary-color : secondary-color;
+    }
+
+    for i in 4: AddressPart {
+        color: get-color(i);
+        text: split[i];
+        size: font-size;
+        bold: bold;
+    }
+
+    AddressPart {
+        text: "...";
+        letter-spacing: 2px;
+        size: font-size;
+    }
+
+    for i in 3: AddressPart {
+        color: get-color(split.length - 3 + i);
+        text: split[split.length - 3 + i];
+        size: font-size;
+        bold: bold;
+    }
+}

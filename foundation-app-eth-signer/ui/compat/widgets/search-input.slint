@@ -1,0 +1,13 @@
+// SPDX-FileCopyrightText: 2023 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { Icon } from "./icon.slint";
+import { Palette, Size } from "../theme.slint";
+import {Input} from "./input.slint";
+
+export component SearchInput inherits Input {
+    //TODO: needs translation
+    placeholder: "Search...";
+    left-icon: "search";
+    show-clear-btn: true;
+}

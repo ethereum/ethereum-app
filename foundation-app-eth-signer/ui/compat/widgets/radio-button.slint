@@ -1,0 +1,67 @@
+// SPDX-FileCopyrightText: 2023 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+
+import {Circle} from "./circle.slint";
+import {Icon} from "./icon.slint";
+import { Timings, Images, Palette, Size } from "../theme.slint";
+
+export component RadioButton inherits Rectangle {
+    // Override inherited properties
+    width: Size.sz7;
+    height: Size.sz7;
+    clip: true;
+
+    // Private properties
+    private property <brush> bg-color: checked ? Palette.background-brand : Palette.background-primary-alternative;
+
+    // Public properties
+    in property <string> id;
+    in property <bool> enabled: true;
+    in property <bool> controlled: false;
+    in-out property <bool> checked;
+
+    // Callbacks
+    callback clicked(string);
+
+    Circle {
+        background: bg-color;
+        border-width: checked ? Size.zero : Size.sz0_5;
+        size: root.width;
+        animate background {
+            duration: Timings.prop-change;
+            easing: ease-in-out;
+        }
+
+        Icon {
+            name: "check";
+            color: Palette.border-inverse;
+            size: Size.sz6;
+            opacity: checked ? 1 : 0;
+
+            animate size { duration: Timings.prop-change; }
+            animate opacity { duration: Timings.prop-change; }
+        }
+
+        states [
+            disabled when !root.enabled: {
+                background: checked ? Palette.content-disabled : Palette.background-disabled;
+                border-color: checked ? Palette.transparent : Palette.border-disabled;
+            }
+            pressed when touchArea.pressed && enabled: {
+                background: checked ? Palette.background-brand-pressed : Palette.border-disabled;
+            }
+        ]
+    }
+
+    touchArea := TouchArea {
+        clicked => {
+            if (enabled) {
+                if (!controlled) {
+                    checked = !checked;
+                }
+                clicked(id);
+            }
+        }
+    }
+}

@@ -1,0 +1,93 @@
+// SPDX-FileCopyrightText: 2023 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import {UISize, Palette, Size, Linecap, Utils} from "../theme.slint";
+
+export component Arc {
+    // Public properties
+    in property <string> id;
+    in property <length> size: Size.sz10;
+    in property <float> start-angle: 0.0;
+    in property <float> end-angle: 270.0;
+    in property <color> stroke-color: Palette.content-brand;
+    in property <length> stroke-width: Size.sz4;
+    in property <Linecap> stroke-linecap: Linecap.round;
+
+    // Private properties
+    private property <float> r: size / 1px / 2;
+
+    // #IF PREVIEW
+    // private property <bool> full-circle: start-angle + end-angle == 360.0;
+    //
+    // if !full-circle: Path {
+    //     width: size;
+    //     height: size;
+    //     stroke: stroke-color;
+    //     stroke-width: stroke-width;
+    //     // This is available in the next version, but we will need to update our Linecap definition
+    //     // or just use Slint's.
+    //     // stroke-line-cap: LineCap.butt;
+    //     fill: transparent;
+    //
+    //     MoveTo {
+    //         x: r + r * cos(start-angle * 1deg - 90deg);
+    //         y: r + r * sin(start-angle * 1deg - 90deg);
+    //     }
+    //
+    //     ArcTo {
+    //         x: r + r * cos(end-angle * 1deg - 90deg);
+    //         y: r + r * sin(end-angle * 1deg - 90deg);
+    //         radius-x: r;
+    //         radius-y: r;
+    //         large-arc: end-angle - start-angle > 180;
+    //         sweep: true;
+    //     }
+    // }
+    //
+    // if full-circle: Path {
+    //     width: size;
+    //     height: size;
+    //     stroke: stroke-color;
+    //     stroke-width: stroke-width;
+    //     // This is available in the next version, but we will need to update our Linecap definition
+    //     // or just use Slint's.
+    //     // stroke-line-cap: LineCap.butt;
+    //     fill: transparent;
+    //
+    //     MoveTo {
+    //         x: r + r * cos(0deg);
+    //         y: r + r * sin(0deg);
+    //     }
+    //
+    //     ArcTo {
+    //         x: r + r * cos(180deg);
+    //         y: r + r * sin(1800deg);
+    //         radius-x: r;
+    //         radius-y: r;
+    //         large-arc: true;
+    //         sweep: true;
+    //     }
+    //
+    //     ArcTo {
+    //         x: r + r * cos(0deg);
+    //         y: r + r * sin(0deg);
+    //         radius-x: r;
+    //         radius-y: r;
+    //         large-arc: true;
+    //         sweep: true;
+    //     }
+    // }
+    // #ELSE
+    Image {
+        width: size;
+        height: size;
+        source: Utils.arc(
+            size, 
+            size, 
+            start-angle, 
+            end-angle, 
+            (1 - stroke-width / 1px / r),
+            stroke-color);
+    }
+    // #ENDIF
+}

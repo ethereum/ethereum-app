@@ -1,0 +1,42 @@
+// SPDX-FileCopyrightText: 2023 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { Icon } from "./icon.slint";
+import { Palette, Utils } from "../theme.slint";
+
+// (SFT-4668) Timer-based Loader because animaitons have no FPS cap and will eat the CPU
+export component TimerLoader inherits Rectangle {
+    width: size;
+    height: size;
+
+    in property <bool> running: true;
+    in property <length> size: 24px;
+    in property <duration> interval: 100ms;
+
+    in property <brush> loader-color: Palette.content-tertiary;
+    in property <brush> active-color: Palette.content-primary;
+
+    property <int> tick: 0;
+
+    // #IF PREVIEW
+    // Icon {
+    //     name: "spinner";
+    // }
+    // #ELSE
+    Image {
+        source: Utils.loader(parent.size, tick, loader-color, active-color);
+        preferred-width: parent.size;
+        preferred-height: parent.size;
+        width: parent.size;
+        height: parent.size;
+    }
+    // #ENDIF
+
+    timer := Timer {
+        interval: interval;
+        running: running;
+        triggered() => {
+            tick = tick + 1;
+        }
+    }
+}

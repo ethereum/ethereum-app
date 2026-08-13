@@ -1,0 +1,157 @@
+// SPDX-FileCopyrightText: © 2023 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { Palette, Size, Utils } from "../theme.slint";
+import { LightPalette } from "../palettes/light-palette.slint";
+
+// Base component that displays a QR image
+export component RawQrcode inherits Rectangle {
+    in property <image> img;
+
+    Image {
+        source: img;
+
+        // QR Codes are rendered as square modules so scaling using nearest
+        // neighbor algorithm should not decrease quality and is fast.
+        image-rendering: pixelated;
+
+        // Preserve aspect ratio when scaling.
+        image-fit: contain;
+
+        width: 100%;
+        height: 100%;
+    }
+}
+
+// String-based version inherits from RawQrcode
+export component Qrcode inherits RawQrcode {
+    in property <string> data;
+
+    img: Utils.qrcode(data, Palette.black, Palette.white);
+}
+
+// Card version with image
+export component RawQrCodeCard inherits Rectangle {
+    in property <image> img;
+
+    background: LightPalette.background-primary;
+
+    width: 350px;
+    height: 350px;
+
+    border-radius: Size.sz6;
+    border-color: LightPalette.border-tertiary;
+    border-width: Size.sz1;
+    clip: true;
+
+    RawQrcode {
+        img: img;
+        width: 340px;
+        height: 340px;
+    }
+}
+
+// String-based card inherits from RawQrCodeCard
+export component QrCodeCard inherits RawQrCodeCard {
+    in property <string> data;
+
+    img: Utils.qrcode(data, Palette.black, Palette.white);
+}
+
+enum QrDensity {
+    Low, 
+    Medium,
+    High,
+}
+
+
+component DensityDot inherits Rectangle {
+    in property <QrDensity> value;
+    in property <QrDensity> selected;
+
+    width: value == QrDensity.High ? 6px : value == QrDensity.Medium ? 9px : 12px;
+    height: self.width;
+
+    background: selected == value ? Palette.content-brand : Palette.content-tertiary;
+}
+
+export component AnimatedQrCode inherits QrCodeCard {
+    in property <[string]> parts;
+    in property <duration> interval: 250ms;
+    in property <bool> animate: true;
+
+    private property <int> index: 0;
+
+    data: parts[index];
+
+    Timer {
+        interval: interval;
+        running: animate;
+        triggered() => {
+            index += 1;
+        }
+    }
+}
+
+export component DynamicQrCode inherits Rectangle {
+    out property <QrDensity> density: QrDensity.Medium;
+
+    property <[string]> parts: get-parts(density-int(self.density));
+
+    pure callback get-parts(int) -> [string];
+
+    pure function density-int(density: QrDensity) -> int {
+        density == QrDensity.Low ? 250 : density == QrDensity.Medium ? 500 : 1000;
+    }
+
+    pure function next-density(d: QrDensity) -> QrDensity {
+        d == QrDensity.Low ? QrDensity.Medium : d == QrDensity.Medium ? QrDensity.High : QrDensity.High
+    }
+
+    pure function prev-density(d: QrDensity) -> QrDensity {
+        d == QrDensity.High ? QrDensity.Medium : d == QrDensity.Medium ? QrDensity.Low : QrDensity.Low
+    }
+
+    SwipeGestureHandler {
+        property <length> swipe-threshold: 50px;
+        property <length> dx: self.current-position.x - self.pressed-position.x;
+
+        handle-swipe-left: true;
+        handle-swipe-right: true;
+
+        swiped => {
+            if (dx > swipe-threshold) {
+                root.density = next-density(root.density);
+                root.parts = get-parts(density-int(root.density));
+            } else if (dx < -swipe-threshold) {
+                root.density = prev-density(root.density);
+                root.parts = get-parts(density-int(root.density));
+            }
+        }
+
+        VerticalLayout {
+            alignment: start;
+            spacing: Size.sz6;
+
+            HorizontalLayout {
+                alignment: center;
+                AnimatedQrCode {
+                    parts: parts;
+                }
+            }
+
+            HorizontalLayout {
+                alignment: center;
+                spacing: Size.sz2;
+
+                for d in [QrDensity.High, QrDensity.Medium, QrDensity.Low]: VerticalLayout {
+                    alignment: center;
+                    DensityDot {
+                        value: d;
+                        selected: root.density;
+                    }
+                }
+            }
+        }
+    }
+}

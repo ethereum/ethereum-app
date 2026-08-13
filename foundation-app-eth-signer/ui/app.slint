@@ -1,0 +1,22 @@
+// SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: MIT
+
+import { Theme } from "@ui/theme.slint";
+import { CurrentTheme, Palettes, Images, CompatImages, Utils, GradientDirection, GradientStop } from "compat/theme.slint";
+import { TR } from "compat/i18n.slint";
+import { BaseWindow } from "compat/widgets.slint";
+import { Router } from "gen/router.slint";
+import { Callbacks } from "callbacks.slint";
+import { VerifyAddress } from "verify-address.slint";
+import { CreateAccount } from "create-account.slint";
+import { EnterPassphrase } from "enter-passphrase.slint";
+
+// GradientDirection/GradientStop/Palettes are needed on the Rust side (the
+// Utils binder macro and theme.rs refer to them as crate:: types).
+export { Theme, Images, CompatImages, Utils, CurrentTheme, Palettes, GradientDirection, GradientStop, Callbacks, VerifyAddress, CreateAccount, EnterPassphrase }
+export { TR }
+export * from "gen/exports.slint";
+
+export component AppWindow inherits BaseWindow {
+    Router { }
+}

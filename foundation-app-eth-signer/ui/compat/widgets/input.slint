@@ -1,0 +1,297 @@
+// SPDX-FileCopyrightText: 2024 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+import {Size, Palette, Font, UISize, Images, Utils} from "../theme.slint";
+import {Icon} from "./icon.slint";
+import {IconButton} from "./icon-button.slint";
+import {Button} from "./button.slint";
+import {TextMd, TextXs} from "./txt.slint";
+import {Circle} from "./circle.slint";
+
+export component Input inherits Rectangle {
+    // Public properties
+    in property <string> id;
+    in-out property <string> text;
+    in property <string> left-icon;
+    in property <bool> show-clear-btn: true;
+    in property <string> prefix; // Used to display Enter any combination of numbers and lettersnon-editable text before the input (e.g., "1. Some text")
+    in property <string> placeholder;
+    in property <bool> has-error: false;
+    in property <bool> has-notice: false;
+    in-out property <bool> temp-has-notice: false;
+    in property <bool> has-disabled: false;
+    in property <string> message;
+    in-out property <string> temp-message;
+    in property <bool> enabled: true;
+    in property <InputType> input-type: InputType.text;
+    in property <CapsMode> caps-mode: CapsMode.none;
+    in property <string> right-icon;
+    in property <bool> bounded-number: false;
+    in property <string> minimum: "";
+    in property <string> maximum: "";
+    in-out property <bool> show-password: false;
+    in property <bool> keep-focus-after-accept: false;
+    in property <bool> show-password-confirmation-required: false;
+    in property <bool> filter-special-characters: false;
+    in-out property <bool> filtered-character: false;
+    in property <string> special-chars-removed-label;
+    in property <brush> text-color: Palette.content-primary;
+    in property <bool> locked: false;
+    in property <string> accept-button-text;
+    in property <bool> accept-button-enabled: !has-error && !has-notice;
+    /// Optional trailing action rendered inside the input.
+    in property <string> action-label;
+    in property <string> action-icon;
+    // Fits the current trailing actions while preserving at least 144px for the
+    // text field on the standard screen; narrower hosts can override it.
+    in property <length> action-max-width: UISize.screen-width / 2 - Size.sz6;
+
+    callback accepted(string);
+    callback edited(string);
+    callback action-clicked();
+    callback confirm-show-passsword() -> bool;
+    callback key-pressed(KeyEvent) -> EventResult;
+
+    out property <bool> has-focus: text-input.has-focus;
+
+    height: Size.sz14;
+    background: (enabled && !has-disabled) ? Palette.background-primary-alternative : Palette.background-disabled;
+    border-radius: Size.sz6;
+    border-width: Size.sz0_25;
+    border-color: root.has-error ? Palette.border-negative : ((root.has-notice || root.temp-has-notice) ? Palette.border-notice : (root.has-disabled ? Palette.content-tertiary-inverse : (text-input.has-focus ? Palette.border-focus : Palette.background-hover)));
+    forward-focus: text-input;
+
+    HorizontalLayout {
+        if (enabled && input-type == InputType.number): VerticalLayout {
+            padding: Size.sz4;
+            spacing: Size.sz2;
+
+            IconButton {
+                size: Size.sz6;
+                touch-factor: 3;
+                icon: "minus";
+                icon-color: Palette.content-primary;
+
+                clicked => {
+                    if (!locked) {
+                        debug("Decrementing number");
+                        if (bounded-number) {
+                            root.text = Utils.check-bounds(Utils.decrement-string(root.text), minimum, maximum);
+                        } else {
+                            root.text = Utils.decrement-string(root.text);
+                        }
+                        text-input.text = root.text;
+                        root.edited(root.text);
+                    }
+                }
+            }
+        }
+
+        HorizontalLayout {
+            padding-left: input-type == InputType.number ? Size.zero : Size.sz4;
+            spacing: Size.sz1;
+            if (root.left-icon != ""): VerticalLayout {
+                alignment: center;
+                Icon {
+                    size: Size.sz6;
+                    name: root.left-icon;
+                    colorize: Palette.content-tertiary;
+                }
+            }
+
+            if (root.prefix != ""): TextMd {
+                width: Size.sz9;
+                text: root.prefix;
+                color: Palette.content-tertiary;
+                horizontal-alignment: input-type == InputType.number ? TextHorizontalAlignment.center : TextHorizontalAlignment.left;
+                vertical-alignment: TextVerticalAlignment.center;
+            }
+
+            HorizontalLayout {
+                horizontal-stretch: 1;
+                spacing: Size.sz2;
+        
+                // Stack the placeholder and TextInput on top of each other
+                Rectangle {
+                    width: 100%;
+                    clip: true;
+
+                    if (text-input.text == "" && input-type != InputType.number): TextMd {
+                        width: text-input.width;
+                        height: text-input.height;
+                        text: root.placeholder;
+                        color: Palette.content-disabled;
+                        horizontal-alignment: TextHorizontalAlignment.left;
+                        vertical-alignment: TextVerticalAlignment.center;
+                    }
+
+                    text-input := TextInput {
+                        text <=> root.text;
+                        color: root.has-error ? Palette.content-negative : ((root.has-notice || root.temp-has-notice) ? Palette.content-notice : ((enabled && !root.has-disabled) ? root.text-color : Palette.content-disabled));
+                        // We have to access the font directly here since TextInput is a built-in component.
+                        font-family: Font.text-md.family;
+                        font-size: Font.text-md.size;
+                        font-weight: Font.text-md.weight;
+                        input-type: root.input-type == InputType.password ? (root.show-password ? InputType.text : InputType.password) : root.input-type;
+                        caps-mode: root.caps-mode;
+                        accept-button-text: root.accept-button-text;
+                        accept-button-enabled: root.accept-button-enabled;
+                        horizontal-alignment: input-type == InputType.number ? TextHorizontalAlignment.center : TextHorizontalAlignment.left;
+                        vertical-alignment: TextVerticalAlignment.center;
+                        enabled: enabled && !locked;
+                        // Horizontal auto-scroll for long text — pattern from upstream Slint's ExtendedLineEdit demo.
+                        width: max(parent.width - self.text-cursor-width, self.preferred-width);
+                        property <length> computed-x: 0;
+                        x: min(0px, max(parent.width - self.width - self.text-cursor-width, self.computed-x));
+
+                        accepted() => {
+                            root.accepted(self.text);
+                            if !(root.input-type == InputType.password && root.keep-focus-after-accept) {
+                                self.clear-focus();
+                            }
+                        }
+
+                        edited() => {
+                            if (input-type == InputType.number && bounded-number) {
+                                self.text = Utils.check-bounds(self.text, minimum, maximum);
+                            }
+                            if (root.filtered-character) {
+                                root.filtered-character = false;
+                                root.temp-has-notice = false;
+                                root.temp-message = "";
+                            }
+                            if (filter-special-characters && self.text != Utils.filter-special-characters(self.text)) {
+                                self.text = Utils.filter-special-characters(self.text);
+                                root.temp-has-notice = true;
+                                root.temp-message = special-chars-removed-label;
+                                root.filtered-character = true;
+                            }
+                            root.edited(self.text);
+                        }
+
+                        cursor-position-changed(cursor-position) => {
+                            if (root.input-type == InputType.number) {
+                                return;
+                            }
+                            if cursor-position.x + self.computed-x < Size.sz2 {
+                                self.computed-x = - cursor-position.x + Size.sz2;
+                            } else if cursor-position.x + self.computed-x > parent.width - Size.sz2 - self.text-cursor-width {
+                                self.computed-x = parent.width - cursor-position.x - Size.sz2 - self.text-cursor-width;
+                            }
+                        }
+
+                        // input-type swap (password reveal/hide) doesn't fire cursor-position-changed on its own;
+                        // re-poke the cursor so the scroll re-clamps in the new font metrics.
+                        changed input-type => {
+                            self.set-selection-offsets(self.anchor-position-byte-offset, self.cursor-position-byte-offset);
+                        }
+
+                        key-pressed(event) => {
+                            root.key-pressed(event)
+                        }
+                    }
+                }
+
+                // Ensure that touching in the padding area focuses the text input
+                TouchArea {
+                    clicked => {
+                        if (enabled && !locked) {
+                            text-input.focus();
+                            debug("Clicked on input");
+                        }
+                    }
+                }
+            }
+        }
+    
+        // TODO: Talk to Edi about this being an IconButton variant
+        // The icon can then just be the X (same for "add")
+        if (input-type == InputType.password || (enabled && (input-type == InputType.number || (root.show-clear-btn && text-input.text != "")))): VerticalLayout {
+            padding: Size.sz4;
+            spacing: Size.sz2;
+
+            IconButton {
+                size: Size.sz6;
+                touch-factor: 3;
+                icon: input-type == InputType.number ? "plus" : (input-type == InputType.password ? (root.show-password ? "eye-off" : "eye") : locked ? "" : "remove");
+                // "remove" (x) button has its own coloration and transparency, only shows for normal text
+                icon-color: input-type == InputType.text ? transparent : Palette.content-primary;
+
+                clicked => {
+                    if (input-type == InputType.number && !locked) {
+                        debug("Incrementing number");
+                        if (bounded-number) {
+                            root.text = Utils.check-bounds(Utils.increment-string(root.text), minimum, maximum);
+                        } else {
+                            root.text = Utils.increment-string(root.text);
+                        }
+                        text-input.text = root.text;
+                        root.edited(root.text);
+                    } else if (input-type == InputType.password) {
+                        debug("Toggling password visibility");
+                        if root.show-password {
+                            root.show-password = false;
+                        } else {
+                            if root.show-password-confirmation-required {
+                                root.show-password = root.confirm-show-passsword();
+                            } else {
+                                root.show-password = true;
+                            }
+                        }
+                    } else if (!locked) {
+                        debug("Clearing text");
+                        root.text = "";
+                        text-input.text = "";
+                        text-input.computed-x = 0;
+                        root.edited("")
+                    }
+                }
+            }
+        }
+
+        if (root.right-icon != "" && input-type != InputType.number): VerticalLayout {
+            alignment: center;
+            padding: Size.sz4;
+            Icon {
+                size: Size.sz6;
+                name: root.right-icon;
+                color: has-error ? Palette.content-copper-brand : Palette.content-brand;
+            }
+        }
+
+        if (root.action-label != "" && input-type != InputType.number): VerticalLayout {
+            horizontal-stretch: 0;
+            alignment: center;
+            padding-right: Size.sz2;
+
+            Button {
+                compact: true;
+                max-width: root.action-max-width;
+                label: root.action-label;
+                icon: root.action-icon;
+                enabled: root.enabled && !root.has-disabled && !root.locked;
+                clicked => {
+                    root.action-clicked();
+                }
+            }
+        }
+    }
+
+    // The error label goes outside the bounds with no clipping, so leave enough padding outside.
+    if (root.message != "" || root.temp-message != ""): HorizontalLayout {
+        x: Size.sz4;
+        y: root.height + Size.sz0_5;
+        height: 24px;
+        TextXs {
+            text: root.message != "" ? root.message : root.temp-message;
+            color: root.has-error ? Palette.content-negative : ((root.has-notice || root.temp-has-notice) ? Palette.content-notice : (root.has-disabled ? Palette.content-tertiary-inverse : Palette.border-secondary));
+        }
+    }
+}
+
+// Backward compatibility wrapper for PasswordInput
+export component PasswordInput inherits Input {
+    input-type: InputType.password;
+
+    // Override default properties with password-specific defaults
+    show-clear-btn: false;  // Passwords typically don't show clear button by default
+}

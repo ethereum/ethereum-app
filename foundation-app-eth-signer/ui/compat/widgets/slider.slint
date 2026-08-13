@@ -1,0 +1,87 @@
+// SPDX-FileCopyrightText: 2023 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import {UISize, Palette, Size} from "../theme.slint";
+import {Circle} from "./circle.slint";
+import {Icon} from "./icon.slint";
+import {HeadingLg, HeadingSm, TextLg, TextMd} from "./txt.slint";
+
+export component Slider inherits Rectangle {
+    // Override inherited properties
+    height: Size.sz14;  // TODO: Why is this necessary?
+
+    // Privte properties
+    private property <float> range: maximum - minimum;
+    private property <float> move-start-value: 0.0;
+    private property <float> new-value: root.value;
+
+    // Public properties
+    in property <float> maximum: 100;
+    in property <float> minimum: 0;
+    in property <string> icon;
+    in-out property <float> value;
+    in property <float> notification-threshold: 0.0;
+    in property <bool> controlled: false;
+
+    callback changed(float);
+    callback pressed();
+    callback released();
+
+    // Calculate new value, capped to the minimum and maximum
+    function calc_current_value(mouse-x: length) -> float {
+        return root.minimum + max(
+            0,
+            min(range, (mouse-x / track.width) * range));
+    }
+
+    track := Rectangle {
+        background: Palette.background-primary;
+        height: Size.sz4;  // TODO: Size
+        width: parent.width - handle.width;
+        border-radius: self.height / 2;
+        border-width: 1px;  // TODO: Size
+        border-color: Palette.border-secondary;
+    }
+
+    handle := Circle {
+        size: Size.sz14;
+        background: Palette.background-brand;
+        x: handle.width / 2 + ((controlled ? root.value : new-value) - minimum) / range * track.width - handle.width / 2;
+
+        if icon != "": Icon {
+            name: icon;
+            color: Palette.white;
+        }
+    }
+
+    touch := TouchArea {
+        moved => {
+            if (self.enabled && self.pressed) {
+                // Only update if the change is greater than the threshold
+                new-value = calc_current_value(touch.mouse-x);
+                if (abs(new-value - move-start_value) > notification-threshold) {
+                    changed(new-value);
+                    move-start-value = new-value;
+                    if (!controlled) {
+                        root.value = new-value;
+                    }
+                }
+            }
+        }
+
+        pointer-event(p) => {
+            if (self.enabled) {
+                if (p.kind == PointerEventKind.down) {
+                    pressed();
+                    move-start-value = calc_current_value(touch.mouse-x);
+                    if (!controlled) {
+                        root.value = new-value;
+                    }
+                } else if (p.kind == PointerEventKind.up) {
+                    changed(calc_current_value(touch.mouse-x));
+                    released();
+                }
+            }
+        }
+    }
+}

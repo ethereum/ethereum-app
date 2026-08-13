@@ -1,0 +1,76 @@
+// SPDX-FileCopyrightText: 2025 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { Palette, Size } from "../theme.slint";
+import { Input } from "./input.slint";
+import { TextSm } from "./txt.slint";
+
+export component TitledInput inherits VerticalLayout {
+    in property <string> title;
+    in property <string> placeholder;
+    in-out property <string> text;
+    in property <bool> has-error: false;
+    in property <bool> has-notice: false;
+    in property <bool> has-disabled: false;
+    in property <string> message;
+    in property <bool> enabled: true;
+    in property <bool> show-clear-btn: true;
+    in property <CapsMode> caps-mode: none;
+    in property <InputType> input-type: InputType.text;
+    in property <bool> bounded-number: false;
+    in property <string> minimum: "";
+    in property <string> maximum: "";
+    in property <bool> show-password: false;
+    in property <bool> filter-special-characters: false;
+    in property <string> special-chars-removed-label;
+    in property <bool> locked: false;
+    in property <string> accept-button-text;
+    in property <bool> accept-button-enabled: !has-error && !has-notice;
+
+    out property <bool> has-focus: input.has-focus;
+
+    spacing: Size.sz2;
+    forward-focus: input;
+
+    callback edited(string);
+    callback accepted(string);
+
+    HorizontalLayout {
+        padding-left: Size.sz4;
+        alignment: start;
+        TextSm {
+            text: title;
+            color: Palette.content-tertiary;
+        }
+    }
+
+    input := Input {
+        placeholder: placeholder;
+        text <=> text;
+        message: message;
+        has-error: has-error;
+        has-notice: has-notice;
+        has-disabled: has-disabled;
+        enabled: enabled;
+        show-clear-btn: show-clear-btn;
+        caps-mode: caps-mode;
+        input-type: input-type;
+        bounded-number: bounded-number;
+        minimum: minimum;
+        maximum: maximum;
+        show-password: show-password;
+        filter-special-characters: filter-special-characters;
+        special-chars-removed-label: special-chars-removed-label;
+        locked: locked;
+        accept-button-text: root.accept-button-text;
+        accept-button-enabled: root.accept-button-enabled;
+
+        edited(text) => {
+            parent.edited(text);
+        }
+
+        accepted(text) => {
+            parent.accepted(text);
+        }
+    }
+}

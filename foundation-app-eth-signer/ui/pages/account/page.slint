@@ -1,0 +1,218 @@
+// SPDX-FileCopyrightText: 2025 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { BasePage, ContentSection, HLine, ItemTextPreview, MenuItemLayout, MenuSection, MenuSectionLayout, NavHeader, OverlayMenu, PageBody, PopupMenuItem, TitledInput, ButtonSection, Button, ConfirmationModal } from "../../compat/widgets.slint";
+import { TR2, TrId } from "../../gen/tr.slint";
+import { Palette, Importance } from "../../compat/theme.slint";
+
+import { Navigate } from "../../gen/navigate.slint";
+import { AccountProps } from "./props.slint";
+import { Callbacks, AccountView, SingleSigView } from "../../callbacks.slint";
+import { CreateAccount } from "../../create-account.slint";
+
+component AccountButtons inherits ButtonSection {
+    in property <string> account-id;
+    in property <bool> archived;
+
+    callback archive-clicked();
+    callback delete-clicked();
+
+    if !archived: Button {
+        label: TR2.lookup(TrId.DetailsSinglesigArchiveCode);
+        icon: "archive";
+        importance: Importance.secondary;
+
+        clicked => {
+            root.archive-clicked();
+        }
+    }
+
+    if archived: Button {
+        label: TR2.lookup(TrId.ArchivedAccountDeleteAccount);
+        importance: Importance.negative;
+
+        clicked => {
+            root.delete-clicked();
+        }
+    }
+
+    if archived: Button {
+        label: TR2.lookup(TrId.ArchivedAccountRestoreAccount);
+        icon: "export";
+        importance: Importance.primary;
+
+        clicked => {
+            Callbacks.update-account-archived(account-id, false);
+            Navigate.backward();
+        }
+    }
+}
+
+component ArchiveModal inherits ConfirmationModal {
+    icon: "info";
+    title: TR2.lookup(TrId.ArchiveAccountModalHeader);
+    text: TR2.lookup(TrId.ArchiveAccountModalContent);
+    confirm-button-label: TR2.lookup(TrId.CommonButtonConfirm);
+    cancel-button-label: TR2.lookup(TrId.CommonButtonCancel);
+}
+
+component DeleteModal inherits ConfirmationModal {
+    in property <string> account-name;
+
+    icon: "alert";
+    icon-color: Palette.content-notice;
+    title: TR2.lookup(TrId.DeleteAccountModalHeader);
+    text: TR2.format(TrId.DeleteAccountModalSubheader, [
+        account-name,
+    ]);
+    confirm-button-label: TR2.lookup(TrId.CommonButtonConfirm);
+    cancel-button-label: TR2.lookup(TrId.CommonButtonCancel);
+}
+
+component SingleSigViewPage inherits BasePage {
+    in property <string> name;
+    in property <string> id;
+    in property <bool> archived;
+    in property <SingleSigView> account;
+
+    property <bool> menu-open: false;
+    property <bool> archive-modal-open: false;
+    property <bool> delete-modal-open: false;
+    property <bool> label-error: false;
+
+    VerticalLayout {
+        NavHeader {
+            title: TR2.lookup(TrId.DetailsSinglesigTitle);
+            clicked => {
+                Navigate.backward();
+            }
+
+            right-icon: archived ? "" : "ellipsis";
+            right-clicked => {
+                menu-open = ! menu-open;
+            }
+        }
+
+        PageBody {
+            ContentSection {
+                TitledInput {
+                    title: TR2.lookup(TrId.DetailsSinglesigLabel);
+                    text: name;
+                    show-clear-btn: false;
+                    caps-mode: sentences;
+                    enabled: !archived;
+                    filter-special-characters: true;
+                    special-chars-removed-label: TR2.lookup(TrId.CommonCreateAccountsanitizedSpecialCharsRemoved);
+
+                    edited(text) => {
+                        if text != name {
+                            self.message = CreateAccount.validate-new-label(text);
+                            self.has-notice = self.message != "";
+                            label-error = self.has-notice;
+                        } else {
+                            label-error = false;
+                        }
+                    }
+
+                    accepted(text) => {
+                        if !label-error {
+                            Callbacks.update-account-name(id, text);
+                        }
+                    }
+                }
+
+                MenuSection {
+                    title: TR2.lookup(TrId.DetailsSinglesigDetails);
+                    MenuSectionLayout {
+                        MenuItemLayout {
+                            first: true;
+                            label: TR2.lookup(TrId.DetailsSinglesigAccountNumber);
+                            ItemTextPreview {
+                                text: account.account-number;
+                            }
+                        }
+
+                        HLine { }
+
+                        MenuItemLayout {
+                            last: true;
+                            label: TR2.lookup(TrId.DetailsSinglesigFingerprint);
+                            ItemTextPreview {
+                                text: account.fingerprint;
+                            }
+                        }
+                    }
+                }
+            }
+
+            AccountButtons {
+                account-id: id;
+                archived: archived;
+
+                archive-clicked => {
+                    archive-modal-open = true;
+                }
+
+                delete-clicked => {
+                    delete-modal-open = true;
+                }
+            }
+        }
+    }
+
+    if menu-open: OverlayMenu {
+        PopupMenuItem {
+            label: TR2.lookup(TrId.DetailsSinglesigMenuArchiveAccount);
+            icon: "archive";
+            first: true;
+            last: true;
+            clicked => {
+                menu-open = false;
+                archive-modal-open = true;
+            }
+        }
+
+        touched-off => {
+            menu-open = false;
+        }
+    }
+
+    if archive-modal-open: ArchiveModal {
+        cancel-clicked => {
+            archive-modal-open = false;
+        }
+
+        confirm-clicked => {
+            Callbacks.update-account-archived(id, true);
+            archive-modal-open = false;
+            Navigate.backward();
+        }
+    }
+
+    if delete-modal-open: DeleteModal {
+        account-name: name;
+
+        cancel-clicked => {
+            delete-modal-open = false;
+        }
+
+        confirm-clicked => {
+            Callbacks.delete-account(id);
+            delete-modal-open = false;
+            Navigate.backward();
+        }
+    }
+}
+
+export component AccountPage inherits Rectangle {
+    in property <AccountProps> props;
+
+    property <AccountView> account: Callbacks.account-details(props.account-id);
+
+    SingleSigViewPage {
+        name: account.name;
+        id: account.id;
+        account: account.single;
+        archived: account.archived;
+    }
+}

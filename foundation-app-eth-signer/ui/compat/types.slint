@@ -1,0 +1,119 @@
+// SPDX-FileCopyrightText: 2024 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+export global Size {
+    out property <length> zero: 0px;
+    out property <length> sz0_25: 1px;
+    out property <length> sz0_5: 2px;
+    out property <length> sz0_75: 3px;
+    out property <length> sz1: 4px;
+    out property <length> sz2: 8px;
+    out property <length> sz2_5: 10px;
+    out property <length> sz3: 12px;
+    out property <length> sz4: 16px;
+    out property <length> sz5: 20px;
+    out property <length> sz6: 24px;
+    out property <length> sz7: 28px;
+    out property <length> sz8: 32px;
+    out property <length> sz9: 36px;
+    out property <length> sz10: 40px;
+    out property <length> sz11: 44px;
+    out property <length> sz12: 48px;
+    out property <length> sz13: 52px;
+    out property <length> sz14: 56px;
+    out property <length> sz15: 60px;
+    out property <length> sz16: 64px;
+}
+
+export global IconSize {
+    out property <length> px16: 16px;
+    out property <length> px24: 24px;
+    out property <length> px32: 32px;
+    out property <length> px40: 40px;
+    out property <length> px48: 48px;
+    out property <length> px64: 64px;
+    out property <length> px80: 80px;
+    out property <length> px96: 96px;
+    out property <length> px128: 128px;
+    out property <length> px144: 144px;
+    out property <length> px184: 184px;
+    out property <length> px192: 192px;
+}
+
+// Ensure these are synced with api/gui-server/src/consts.rs
+export global UISize {
+    out property <length> screen-width: 480px;
+    out property <length> screen-height: 800px;
+    out property <length> control-center-status-bar-height: Size.sz10;
+    out property <length> control-center-expanded-height: 400px;
+    out property <length> app-window-height: screen-height - control-center-status-bar-height;
+    out property <length> popup-menu-width: 314px;
+    out property <length> popup-menu-y: 50px;
+    out property <length> popup-app-height: 600px;
+    out property <length> large-circular-progress-size: 306px;
+    out property <length> modal-width: 424px;
+}
+
+export global Timings {
+    out property <duration> prop-change: 350ms;
+}
+
+export enum Importance { primary, secondary, tertiary, notice, negative, normal, white }
+export enum Linecap { round, butt, square }
+export enum BorderStyle { solid, dotted, dashed }
+
+export struct GradientStop {
+    color: color,
+    stop: percent,
+}
+
+@rust-attr(repr(u8))
+export enum GradientDirection {
+    none,
+    vertical,
+    horizontal,
+    diagonal-falling,
+    diagonal-rising,
+    radial,
+}
+
+@rust-attr(repr(u8))
+export enum CardColor {
+    dark-grey,
+    purple,
+    green,
+    pine,
+    light-copper,
+    dark-copper,
+    teal,
+    blue,
+    orange,
+    red,
+}
+
+@rust-attr(derive(serde::Serialize, serde::Deserialize))
+export enum ResultLevel {
+    info,
+    error,
+}
+
+@rust-attr(derive(serde::Serialize, serde::Deserialize))
+export struct CallbackResult {
+    level: ResultLevel,
+    success: bool,
+    text: string,
+    title: string,
+}
+
+export struct ModalTextLine {
+    text: string,
+    color: brush,
+    bold: bool,
+}
+
+@rust-attr(repr(u8))
+export enum ScanQrAction {
+    left-clicked,
+    right-clicked,
+    button-clicked,
+}

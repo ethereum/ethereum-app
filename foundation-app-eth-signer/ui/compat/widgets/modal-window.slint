@@ -1,0 +1,43 @@
+// SPDX-FileCopyrightText: 2023 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import {Palette, Size, UISize} from "../theme.slint";
+
+export component ModalWindow inherits Rectangle {
+    width: UISize.screen-width;
+    height: UISize.popup-app-height;
+
+    // Top
+    Rectangle {
+        x: 0px;
+        y: 0px;
+        width: 100%;
+        height: Size.sz12;
+        border-radius: Size.sz6;
+        border-width: 1px;
+        border-color: Palette.border-tertiary;
+        background: Palette.background-primary;
+    }
+
+    // Drag handle
+    Rectangle {
+        x: root.width / 2 - Size.sz5;
+        y: Size.sz3;
+        width: Size.sz10;
+        height: Size.sz1;
+        border-radius: Size.sz0_5;
+        background: Palette.content-tertiary;
+        z: 2;
+    }
+
+    // Content
+    Rectangle {
+        x: 0px;
+        y: Size.sz8;
+        width: 100%;
+        height: root.height - Size.sz8;
+        background: Palette.background-primary;
+        // Content
+        @children
+    }
+}

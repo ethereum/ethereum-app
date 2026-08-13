@@ -1,0 +1,43 @@
+// SPDX-FileCopyrightText: 2024 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import {Size, Images, CompatImages} from "../theme.slint";
+
+struct ShadowBoxModel{
+    left-right: int,
+    top: int,
+    bottom: int,
+    filename: string,
+}
+
+export component Shadow inherits Rectangle {
+    in property <int> level: 3;
+
+    private property <int> radius: Size.sz6 / 1px;
+    private property <int> left-right-slice: shadows[level - 1].left-right + radius;
+    private property <int> top-slice: shadows[level - 1].top + radius;
+    private property <int> bottom-slice: shadows[level - 1].bottom + radius;
+
+    private property <[ShadowBoxModel]> shadows: [
+        { left-right: 4, top: 2, bottom: 6, filename: "images/shadow-l1" },
+        { left-right: 8, top: 3, bottom: 12, filename: "images/shadow-l2" },
+        { left-right: 16, top: 8, bottom: 24, filename: "images/shadow-l3" },
+        { left-right: 20, top: 10, bottom: 30, filename: "images/shadow-l4" },
+        { left-right: 24, top: 12, bottom: 36, filename: "images/shadow-l5" },
+        { left-right: 32, top: 15, bottom: 48, filename: "images/shadow-l6" },
+    ];
+
+    // Only draw the shadow if the level is between 1 and 6
+    if (level > 0 && level <= 6): Image {
+        y: shadows[root.level - 1].top * 1px * -1;
+        x: shadows[root.level - 1].left-right * 1px * -1;
+        width: parent.width + shadows[root.level - 1].left-right * 1px * 2;
+        height: parent.height + (shadows[root.level - 1].top + shadows[root.level - 1].bottom) * 1px;
+        source: CompatImages.nine-slice(shadows[root.level - 1].filename);
+        image-fit: contain;
+        VerticalLayout {
+            padding: root.padding;
+            alignment: start;
+        }
+    }
+}

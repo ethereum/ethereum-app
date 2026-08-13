@@ -1,0 +1,101 @@
+// SPDX-FileCopyrightText: 2024 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { Images, Size, CardColor, Utils, Palette } from "../theme.slint";
+import { UIColors } from "../palettes/ui-colors.slint";
+
+export { Utils, Images }
+
+export component LineCard inherits Rectangle {
+    width: 420px; // TODO: Remove this when we figure out why we get a binding loop without it
+    height: 144px;
+
+    in property <CardColor> card-color: CardColor.blue;
+
+    out property <bool> pressed: touchArea.pressed;
+
+    callback clicked();
+
+    // #IF PREVIEW
+    // Rectangle {
+    //     width: root.width;
+    //     height: root.height;
+    //     border-radius: Size.sz6;
+    //     border-width: 3px;
+    //     border-color: @linear-gradient(180deg, Utils.get-card-line-top-color(card-color) 0%, Utils.get-card-line-bottom-color(card-color) 100%);
+    //     background: Utils.get-card-bg-color(card-color);
+    //     clip: true;
+    //     Rectangle {
+    //         x: Size.sz0_5;
+    //         y: Size.sz0_5;
+    //         width: root.width - Size.sz1;
+    //         height: root.height - Size.sz1;
+    //         background: @linear-gradient(180deg, UIColors.transparent 0%, UIColors.primary-black.transparentize(0.8) 66%, UIColors.primary-black.transparentize(0.65) 100%);
+    //         border-radius: Size.sz6;
+    //     }
+    // }
+    // #ELSE
+    Image {
+        /*
+            width,
+            height,
+            background_color,
+            background_gradient,
+            border_radius,
+            border_width,
+            border_gradient,
+            outer_border_width,
+            outer_border_gradient,
+            template, (e.g., "lines" means it will draw the lines)
+        */
+        source: Utils.line-card(
+            root.width, root.height, Utils.get-card-bg-color(card-color),
+            [
+            { color: UIColors.transparent, stop: 0% },
+            { color: UIColors.primary-black.with-alpha(0.13), stop: 35% },
+            { color: UIColors.primary-black.with-alpha(0.65), stop: 100% }
+        ],
+            Size.sz6, Size.sz0_5, [
+            { color: Utils.get-card-line-top-color(card-color), stop: 0% },
+            { color: Utils.get-card-line-bottom-color(card-color), stop: 100% }
+        ],
+            Size.sz0_5, [{ color: #454444, stop: 0% }, { color: #231F20, stop: 100% }],
+            "lines");
+        width: root.width;
+        height: root.height;
+    }
+    // #ENDIF
+
+    Rectangle {
+        x: Size.sz0_5;  // Account for border width
+        y: Size.sz0_5;
+        width: root.width - Size.sz1;
+        height: root.height - Size.sz1;
+        background: transparent;
+        border-radius: Size.sz6 - Size.sz0_5;  // Inner radius
+        clip: true;
+
+        HorizontalLayout {
+            padding: 0px;
+            alignment: stretch;
+
+            @children
+        }
+    }
+
+    touchArea := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component Test {
+    width: 500px;
+    height: 200px;
+    LineCard {
+        card-color: CardColor.blue;
+        width: 416px;
+        height: 144px;
+    }
+}

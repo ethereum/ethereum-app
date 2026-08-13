@@ -1,0 +1,36 @@
+// SPDX-FileCopyrightText: 2025 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { TR2, TrId } from "../../gen/tr.slint";
+import { Palette, Size } from "../../compat/theme.slint";
+import { BasePage, PageBody, NavHeader, TextSm } from "../../compat/widgets.slint";
+
+import { SettingsProps } from "props.slint";
+import { Navigate } from "../../gen/navigate.slint";
+
+// Settings shell: kept as a placeholder for future Ethereum-specific settings.
+export component SettingsPage inherits BasePage {
+    in property <SettingsProps> props;
+
+    VerticalLayout {
+        NavHeader {
+            title: TR2.lookup(TrId.SettingsTitle);
+            clicked => {
+                Navigate.backward();
+            }
+        }
+
+        PageBody {
+            VerticalLayout {
+                alignment: center;
+                padding: Size.sz6;
+
+                TextSm {
+                    text: "No settings yet";
+                    color: Palette.content-secondary;
+                    horizontal-alignment: center;
+                }
+            }
+        }
+    }
+}

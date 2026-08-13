@@ -1,0 +1,36 @@
+// SPDX-FileCopyrightText: 2023 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import {Size} from "../theme.slint";
+import {RadioCard} from "./radio-card.slint";
+
+export struct RadioCardModel {
+    label: string,
+    icon: string,
+    value: string,
+}
+
+export component RadioCardGroup inherits HorizontalLayout {
+    spacing: Size.sz4;
+
+    // Public properties
+    in property <[RadioCardModel]> model: [{ label: "Yes", icon: "check", value: "1" }, { label: "No", icon: "backspace", value: "0" }];
+    in-out property <int> selected-index: 0;
+    in-out property <string> selected-value;
+
+    // Callbacks
+    function changed(index: int, value: string) {
+        self.selected-index = index;
+        self.selected-value = value;
+    }
+
+    for entry[index] in model: RadioCard {
+        label: entry.label;
+        icon: entry.icon;
+        checked: index == selected_index;
+        controlled: true;
+        clicked => {
+            changed(index, entry.value);
+        }
+    }
+}

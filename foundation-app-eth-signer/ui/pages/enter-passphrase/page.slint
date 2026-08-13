@@ -1,0 +1,196 @@
+// SPDX-FileCopyrightText: 2025 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { BasePage, Button, TextSm, PageBody, ButtonSection, ContentSection, MenuSection, MenuSectionLayout, MenuItemLayout, ItemTextPreview, HLine, Input, NavHeader, TitledInput } from "../../compat/widgets.slint";
+import { Importance, Palette, Size } from "../../compat/theme.slint";
+import { TR2, TrId } from "../../gen/tr.slint";
+import { Utils } from "../../compat/utils.slint";
+
+import { Navigate } from "../../gen/navigate.slint";
+import { EnterPassphrase, EnterPassphraseState } from "../../enter-passphrase.slint";
+import { CreateAccount } from "../../create-account.slint";
+
+component IdlePage inherits BasePage {
+    VerticalLayout {
+        NavHeader {
+            title: TR2.lookup(TrId.EnterPassphraseTitle);
+            clicked => {
+                EnterPassphrase.clear-state();
+                Navigate.backward();
+            }
+        }
+
+        PageBody {
+            ContentSection {
+                spacing: Size.sz12;
+                padding-top: Size.sz4;
+
+                TextSm {
+                    text: TR2.lookup(TrId.EnterPassphraseContent);
+                    color: Palette.content-tertiary;
+                    horizontal-alignment: TextHorizontalAlignment.center;
+                }
+
+                Input {
+                    placeholder: TR2.lookup(TrId.EnterPassphraseFillerText);
+                    text: EnterPassphrase.passphrase;
+
+                    edited(text) => {
+                        EnterPassphrase.passphrase = text;
+                    }
+                }
+            }
+
+            ButtonSection {
+                Button {
+                    label: TR2.lookup(TrId.CommonButtonApply);
+                    clicked => {
+                        EnterPassphrase.try-passphrase();
+                        EnterPassphrase.state = EnterPassphraseState.Confirm;
+                    }
+                }
+            }
+        }
+    }
+}
+
+component ConfirmPage inherits BasePage {
+    property <string> new-label;
+    property <bool> label-error: EnterPassphrase.no-accounts;
+
+    VerticalLayout {
+        NavHeader {
+            title: TR2.lookup(TrId.PassphraseDetailsTitle);
+            clicked => {
+                EnterPassphrase.state = EnterPassphraseState.Idle;
+            }
+        }
+
+        PageBody {
+            ContentSection {
+                MenuSection {
+                    title: TR2.lookup(TrId.PassphraseDetailsDetails);
+                    MenuSectionLayout {
+                        MenuItemLayout {
+                            first: true;
+                            label: TR2.lookup(TrId.ConfirmPassphrasePassphrase);
+                            ItemTextPreview {
+                                text: EnterPassphrase.passphrase;
+                            }
+                        }
+
+                        HLine { }
+
+                        MenuItemLayout {
+                            last: true;
+                            label: TR2.lookup(TrId.ConfirmPassphraseFingerprint);
+                            ItemTextPreview {
+                                text: EnterPassphrase.fingerprint;
+                            }
+                        }
+                    }
+                }
+
+                TextSm {
+                    text: TR2.lookup(TrId.ConfirmPassphraseContent);
+                    horizontal-alignment: TextHorizontalAlignment.center;
+                    color: Palette.content-tertiary;
+                }
+
+                if EnterPassphrase.no-accounts: TitledInput {
+                    title: TR2.lookup(TrId.ConfirmPassphraseLabelAccount0);
+                    placeholder: TR2.lookup(TrId.CreateAccountLabelFillerText);
+                    has-notice: true;
+                    caps-mode: sentences;
+
+                    edited(text) => {
+                        new-label = text;
+                        self.message = CreateAccount.validate-new-label(text);
+                        self.has-notice = self.message != "";
+                        label-error = self.has-notice;
+                    }
+                }
+
+                if EnterPassphrase.no-accounts: TextSm {
+                    text: TR2.lookup(TrId.ConfirmPassphraseLabelExplainer);
+                    horizontal-alignment: TextHorizontalAlignment.center;
+                    color: Palette.content-tertiary;
+                }
+            }
+
+            ButtonSection {
+                Button {
+                    enabled: !label-error && !EnterPassphrase.fingerprint-loading;
+                    label: TR2.lookup(TrId.CommonButtonConfirm);
+                    importance: Importance.primary;
+
+                    clicked => {
+                        EnterPassphrase.slider-index = 1;
+                        if (new-label != "") {
+                            EnterPassphrase.create-initial-account(new-label);
+                            new-label = "";
+                        } else {
+                            EnterPassphrase.confirm-passphrase();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+component ClearPage inherits BasePage {
+    VerticalLayout {
+        NavHeader {
+            title: TR2.lookup(TrId.PassphraseDetailsTitle);
+            clicked => {
+                Navigate.backward();
+            }
+        }
+
+        PageBody {
+            ContentSection {
+                MenuSection {
+                    title: TR2.lookup(TrId.PassphraseDetailsDetails);
+                    MenuSectionLayout {
+                        MenuItemLayout {
+                            first: true;
+                            last: true;
+                            label: TR2.lookup(TrId.ConfirmPassphraseFingerprint);
+                            ItemTextPreview {
+                                text: EnterPassphrase.fingerprint;
+                            }
+                        }
+                    }
+                }
+
+                TextSm {
+                    text: TR2.lookup(TrId.ConfirmPassphraseContent);
+                    horizontal-alignment: TextHorizontalAlignment.center;
+                    color: Palette.content-tertiary;
+                }
+            }
+
+            ButtonSection {
+                Button {
+                    icon: "shield-x";
+                    label: TR2.lookup(TrId.PassphraseDetailsClearPassphrase);
+                    importance: Importance.primary;
+
+                    clicked => {
+                        EnterPassphrase.clear-state();
+                        EnterPassphrase.clear-passphrase();
+                        EnterPassphrase.state = EnterPassphraseState.Idle;
+                        Navigate.backward();
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component EnterPassphrasePage inherits Rectangle {
+    if EnterPassphrase.state == EnterPassphraseState.Idle: IdlePage { }
+    if EnterPassphrase.state == EnterPassphraseState.Confirm: ConfirmPage { }
+    if EnterPassphrase.state == EnterPassphraseState.Clear: ClearPage { }
+}

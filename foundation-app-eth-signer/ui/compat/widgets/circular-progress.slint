@@ -1,0 +1,83 @@
+// SPDX-FileCopyrightText: 2023 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import {Palette, Size, UISize, IconSize, Utils, Images, CompatImages} from "../theme.slint";
+import {HeadingXl} from "./txt.slint";
+import { Arc } from "arc.slint";
+
+export component TimerCircularProgress {
+    // Public properties
+    in property <bool> running: true;
+    in property <float> percent;
+    in property <float> angle-start: 0;
+    in property <length> size: IconSize.px184;
+    in property <length> stroke-width: Size.sz3;
+    in property <color> back-color: size == IconSize.px184 || size == UISize.large-circular-progress-size ? Palette.transparent : Palette.circular-progress-background;
+    in property <color> front-color: Palette.content-brand;
+
+    in property <bool> indeterminate;
+    in property <duration> interval: 100ms;
+
+    // Private properties
+    private property <float> thickness: stroke-width / size * 2.0;
+    private property <int> tick: 0;
+
+    height: size;
+    width: size;
+
+    // Use the original png with shading for the background if at 1x scale
+    if size == IconSize.px184: Image {
+        source: CompatImages.common("images/jumbo-circle");
+        width: parent.width;
+        height: parent.height;
+    }
+
+    if size == UISize.large-circular-progress-size: Image {
+        source: CompatImages.common("images/jumbo-circle-xl");
+        width: parent.width;
+        height: parent.height;
+    }
+
+    // Use the new circular-progress implementation
+    if indeterminate: Image {
+        source: Utils.circular-progress(parent.size, tick, back-color, front-color, thickness);
+        preferred-width: parent.size;
+        preferred-height: parent.size;
+        width: parent.size;
+        height: parent.size;
+    }
+
+    if !indeterminate: Arc {
+        size: parent.size;
+        start-angle: 0.0;
+        end-angle: 360.0;
+        stroke-color: back-color;
+        stroke-width: stroke-width;
+    }
+
+    if !indeterminate: Arc {
+        size: parent.size;
+        start-angle: angle-start;
+        end-angle: angle-start + percent * 360;
+        stroke-color: front-color;
+        stroke-width: stroke-width;
+    }
+
+    // Add a space for children centered within the circle
+    VerticalLayout {
+        alignment: center;
+        HorizontalLayout {
+            alignment: center;
+
+            @children
+        }
+    }
+
+    timer := Timer {
+        interval: interval;
+        running: running && indeterminate;
+        triggered() => {
+            tick = tick + 1;
+        }
+    }
+}

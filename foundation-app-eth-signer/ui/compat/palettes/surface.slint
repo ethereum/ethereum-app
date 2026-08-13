@@ -1,0 +1,32 @@
+// SPDX-FileCopyrightText: 2024 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { UIColors } from "ui-colors.slint";
+
+struct Shadow {
+    x: length,
+    y: length,
+    blur: length,
+    spread: length,
+    color: brush,
+}
+
+// This is not finished!  The Surfaces have TWO shadows each, which Slint does not support, so we will need to create two overlapping
+// Rectangles each with its own shadow.  Surface may be better implemented as a container.
+export global Surface {
+    out property <Shadow> l0: { x: 0px, y: 0px, blur: 0px, spread: 0px, color: UIColors.transparent };
+    out property <Shadow> l1: {
+        x: 0px,
+        y: 2px,
+        blur: 4px,
+        spread: 0px,
+        color: UIColors.primary-black.transparentize(0.92)
+    };
+
+    // The ones below are not correct values, just placeholders:
+    // out property<Shadow> l2: { x: 0px, y: 2px, blur: 4px, spread: 0px, color: UIColors.primary-black.transparentize(0.92) };
+    // out property<Shadow> l3: { x: 0px, y: 2px, blur: 4px, spread: 0px, color: UIColors.primary-black.transparentize(0.92) };
+    // out property<Shadow> l4: { x: 0px, y: 2px, blur: 4px, spread: 0px, color: UIColors.primary-black.transparentize(0.92) };
+    // out property<Shadow> l5: { x: 0px, y: 2px, blur: 4px, spread: 0px, color: UIColors.primary-black.transparentize(0.92) };
+    // out property<Shadow> l6: { x: 0px, y: 2px, blur: 4px, spread: 0px, color: UIColors.primary-black.transparentize(0.92) };
+}

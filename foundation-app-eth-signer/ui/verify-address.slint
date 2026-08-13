@@ -1,0 +1,36 @@
+// SPDX-FileCopyrightText: 2025 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+export struct CheckedRanges {
+    receive-start: int,
+    receive-end: int,
+    change-start: int,
+    change-end: int,
+}
+
+export struct VerifyAddressOptions {
+    account-id: string,
+    show-skip-button: bool,
+    show-view-all: bool,
+}
+
+export enum VerifyAddressState {
+    Idle,
+    Loading,
+    Success,
+    Error,
+    Invalid,
+    Skipped,
+}
+
+export global VerifyAddress {
+    in property <string> address;
+    in property <VerifyAddressState> state: VerifyAddressState.Idle;
+    in property <CheckedRanges> checked-ranges;
+    in property <int> index;
+    in property <int> attempt-number;
+
+    callback verify-address(VerifyAddressOptions);
+    // options, address, attempt-number
+    callback continue-verify-address(VerifyAddressOptions, string, int);
+}

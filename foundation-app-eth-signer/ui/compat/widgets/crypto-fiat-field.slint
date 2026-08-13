@@ -1,0 +1,62 @@
+// SPDX-FileCopyrightText: 2025 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { TextSm } from "./txt.slint";
+import { CardColor, UISize, Palette, Size } from "../theme.slint";
+import { CardCircle } from "./card-circle.slint";
+import { Icon } from "./icon.slint";
+import { LineCard } from "./line-card.slint";
+import { CardField } from "./card-field.slint";
+
+
+export component CryptoFiatField inherits CardField {
+    in property <string> crypto-amount;
+    in property <string> crypto-icon;
+    in property <string> fiat-amount;
+    in property <string> fiat-icon;
+
+    HorizontalLayout {
+        padding-left: Size.sz2;
+        padding-right: Size.sz3;
+        alignment: space-between;
+
+        VerticalLayout {
+            alignment: center;
+
+            HorizontalLayout {
+                spacing: Size.sz0_5;
+
+                Icon {
+                    name: crypto-icon;
+                    color: Palette.content-tertiary;
+                    size: Size.sz6;
+                }
+
+                TextSm {
+                    text: crypto-amount;
+                    color: Palette.content-primary;
+                }
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            visible: fiat-amount != "";
+
+            HorizontalLayout {
+                spacing: Size.sz0_5;
+
+                Icon {
+                    name: fiat-icon;
+                    color: Palette.content-primary;
+                    size: Size.sz6;
+                }
+
+                TextSm {
+                    text: fiat-amount;
+                    color: Palette.content-primary;
+                }
+            }
+        }
+    }
+}

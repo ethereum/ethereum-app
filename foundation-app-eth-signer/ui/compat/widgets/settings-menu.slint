@@ -1,0 +1,277 @@
+// SPDX-FileCopyrightText: 2024 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { UISize, CurrentTheme, Palette, Palettes, Timings, Size, Utils } from "../theme.slint";
+
+import { Icon } from "./icon.slint";
+import { Button } from "./button.slint";
+import { Heading } from "./txt.slint";
+import { Slider } from "./slider.slint";
+import { Font } from "../fonts.slint";
+import { Input } from "input.slint";
+import { TextSm } from "txt.slint";
+import { RadioButton } from "radio-button.slint";
+import { SwitchControlled } from "switch.slint";
+import { Shadow } from "shadow.slint";
+
+global MenuUtils {
+    in-out property <length> list-item-height: 64px;
+}
+
+export component MenuSectionContainer inherits Rectangle {
+    in property <brush> card-background: Palette.background-primary;
+
+    Shadow { }
+
+    Rectangle {
+        background: card-background;
+        border-width: Size.sz0_25;
+        border-color: Palette.border-tertiary;
+        border-radius: Size.sz6;
+    }
+
+    @children
+}
+
+export component MenuSectionLayout inherits VerticalLayout {
+    padding: Size.sz0_25;
+    alignment: start;
+    @children
+}
+
+export component TitledItem inherits VerticalLayout {
+    in property <string> title;
+
+    spacing: Size.sz2;
+    alignment: start;
+    if (title != ""): HorizontalLayout {
+        alignment: start;
+        padding-left: Size.sz4;
+        Text {
+            text: title;
+            color: Palette.content-tertiary;
+
+            font-family: Font.text-sm.family;
+            font-size: Font.text-sm.size;
+            font-weight: Font.text-sm.weight;
+        }
+    }
+
+    @children
+}
+
+export component MenuSection inherits TitledItem {
+    MenuSectionContainer {
+        @children
+    }
+}
+
+export component ItemTextPreview inherits Rectangle {
+    in property <string> text;
+    in property <length> text-width: 128px;
+
+    HorizontalLayout {
+        alignment: end;
+        VerticalLayout {
+            Text {
+                text: root.text;
+                max-width: root.text-width;
+                color: Palette.content-tertiary;
+                font-family: Font.text-sm.family;
+                font-size: Font.text-sm.size;
+                font-weight: Font.text-sm.weight;
+                overflow: elide;
+            }
+        }
+    }
+}
+
+export component ItemTextSm inherits Text {
+    color: Palette.content-primary;
+    font-family: Font.text-sm.family;
+    font-size: Font.text-sm.size;
+    font-weight: Font.text-sm.weight;
+}
+
+// right side of the menu item
+export component MenuItemRightLayout inherits HorizontalLayout {
+    in property <string> icon: "chevron-right";
+    in property <string> text: "";
+    // text will be clipped if longer than this
+    in property <length> text-width: 128px;
+
+    alignment: end;
+    spacing: Size.sz4;
+
+    VerticalLayout {
+        alignment: center;
+        ItemTextPreview {
+            text: root.text;
+            text-width: root.text-width;
+        }
+    }
+
+    if (root.icon != ""): Icon {
+        name: root.icon;
+        color: Palette.content-tertiary;
+    }
+}
+
+// The core item layout component
+export component MenuItemLayout inherits Rectangle {
+    // left icon
+    in property <string> icon: "";
+    in property <string> label;
+    in property <bool> enabled: true;
+    in property <length> label-font-size: Font.text-sm.size;
+    in property <brush> label-color: Palette.content-primary;
+
+    in property <bool> first;
+    in property <bool> last;
+    border-top-left-radius: first ? Size.sz6 : 0;
+    border-top-right-radius: first ? Size.sz6 : 0;
+    border-bottom-left-radius: last ? Size.sz6 : 0;
+    border-bottom-right-radius: last ? Size.sz6 : 0;
+
+    property <duration> select-anim-duration: 100ms;
+    animate background { duration: select-anim-duration; }
+
+    callback clicked();
+
+    height: MenuUtils.list-item-height;
+
+    TouchArea {
+        mouse-cursor: pointer;
+        enabled: root.enabled;
+        clicked => {
+            root.background = Palette.background-pressed;
+            timer.running = true;
+        }
+    }
+
+    // The timer is used to delay the click, giving the selection animation time to complete
+    timer := Timer {
+        interval: select-anim-duration;
+        running: false;
+
+        triggered() => {
+            timer.running = false;
+            root.background = Palette.transparent;
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Size.sz4;
+        padding-right: Size.sz4;
+        padding-top: Size.sz1;
+        padding-bottom: Size.sz1;
+        spacing: Size.sz4;
+
+        HorizontalLayout {
+            alignment: start;
+            spacing: Size.sz4;
+
+            if (root.icon != ""): VerticalLayout {
+                alignment: center;
+                Icon {
+                    name: root.icon;
+                    color: Palette.content-tertiary;
+                }
+            }
+
+            VerticalLayout {
+                alignment: center;
+                ItemTextSm {
+                    text: root.label;
+                    font-size: root.label-font-size;
+                    color: root.label-color;
+                }
+            }
+        }
+
+        HorizontalLayout {
+            alignment: end;
+            VerticalLayout {
+                alignment: center;
+                @children
+            }
+        }
+    }
+}
+
+// Simple horizontal line component
+export component HLine inherits Rectangle {
+    height: 1px;
+    background: Palette.border-tertiary;
+}
+
+export component MenuBooleanItem inherits MenuItemLayout {
+    in property <bool> checked;
+    callback changed(bool);
+
+    clicked => {
+        root.changed(!root.checked);
+    }
+
+    s := SwitchControlled {
+        checked: root.checked;
+        changed(checked) => {
+            root.changed(checked);
+        }
+    }
+}
+
+export component RadioItem inherits MenuItemLayout {
+    in property <bool> checked: false;
+
+    Icon {
+        name: "check";
+        opacity: root.checked ? 1.0 : 0.0;
+        color: Palette.content-brand;
+    }
+}
+
+// text preview with chevron right
+export component MenuActionItem inherits MenuItemLayout {
+    in property <string> text: "";
+    in property <length> text-width: 128px;
+    HorizontalLayout {
+        alignment: end;
+        spacing: Size.sz4;
+        if (text != ""): ItemTextPreview {
+            text: text;
+            text-width: root.text-width;
+        }
+        Icon {
+            name: "chevron-right";
+            color: Palette.content-tertiary;
+        }
+    }
+}
+
+// Collapsible menu that shows/hides its children
+export component CollapsibleMenu inherits VerticalLayout {
+    in property <string> title;
+    in property <string> icon: "";
+    in property <bool> initial-open: false;
+    in-out property <bool> is-open: initial-open;
+
+    alignment: start;
+
+    header := MenuItemLayout {
+        label: title;
+        icon: root.icon;
+        clicked => {
+            root.is-open = !root.is-open;
+        }
+        Icon {
+            name: root.is-open ? "chevron-up" : "chevron-down";
+            color: Palette.content-tertiary;
+        }
+    }
+
+    if (root.is-open): HLine { }
+
+    @children
+}

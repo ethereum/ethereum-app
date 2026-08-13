@@ -1,0 +1,41 @@
+// SPDX-FileCopyrightText: 2025 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { CardColor } from "compat/theme.slint";
+export { CardColor }
+
+export struct SingleSigView {
+    account-number: int,
+    fingerprint: string,
+    public-key: string,
+}
+
+export struct AccountView {
+    id: string,
+    name: string,
+    color: CardColor,
+    archived: bool,
+
+    single: SingleSigView,
+}
+
+export global Callbacks {
+    callback scan-clicked();
+
+    in-out property <[AccountView]> accounts: [];
+    pure callback account-details(account-id: string) -> AccountView;
+    pure callback account-addresses(account-id: string) -> [string];
+
+    callback update-account-name(account-id: string, name: string);
+
+    public function set-archive-mode(mode: bool) {
+        self.set-archive-mode-inner(mode);
+        self.archive-mode = mode;
+    }
+
+    callback set-archive-mode-inner(bool);
+    in-out property <bool> archive-mode;
+
+    callback update-account-archived(account-id: string, archived: bool);
+    callback delete-account(account-id: string);
+}

@@ -1,0 +1,10 @@
+// SPDX-FileCopyrightText: 2023 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import {Palette, Size} from "../theme.slint";
+
+export component Divider inherits Rectangle {
+    // Override inherited properties
+    height: Size.sz0_25;
+    background: Palette.border-tertiary;
+}

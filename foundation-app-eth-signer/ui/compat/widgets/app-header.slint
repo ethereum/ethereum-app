@@ -1,0 +1,75 @@
+// SPDX-FileCopyrightText: 2023 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { Button } from "./button.slint";
+import { Icon } from "./icon.slint";
+import { IconButton } from "./icon-button.slint";
+import { TextMd, HeadingMd } from "./txt.slint";
+import { Palette, Size, Importance  } from "../theme.slint";
+
+export component AppHeader inherits Rectangle {
+    in property <string> title;
+    in property <brush> title-color: Palette.content-primary;
+    in property <LayoutAlignment> alignment: space-between;
+    in property <length> side-padding: Size.sz4;
+    in property <length> extra-title-padding: Size.zero;
+
+    height: Size.sz16;
+
+    HeadingMd {
+        text: title;
+        color: title-color;
+        horizontal-alignment: center;
+        horizontal-stretch: 1;
+        wrap: no-wrap;
+        overflow: elide;
+        width: parent.width - 2 * (side-padding + Size.sz10 + Size.sz2 + extra-title-padding);
+    }
+
+    VerticalLayout {
+        alignment: center;
+        height: Size.sz16;
+
+        HorizontalLayout {
+            width: 100%;
+            alignment: alignment;
+            padding-left: side-padding;
+            padding-right: side-padding;
+
+            @children
+        }
+    }
+}
+
+export component NavHeader inherits AppHeader {
+    in property <string> left-icon: "chevron-left";
+    in property <string> right-icon: "";
+
+    in property <Importance> importance: Importance.normal;
+    in property <length> icon-size: Size.sz8;
+
+    callback clicked;
+    callback right-clicked;
+
+    side-padding: Size.sz8;
+
+    IconButton {
+        icon: left-icon;
+        icon-size: icon-size;
+        size: Size.sz10;
+        importance: importance;
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    if right-icon != "": IconButton {
+        icon: right-icon;
+        icon-size: icon-size;
+        size: Size.sz10;
+        importance: importance;
+        clicked => {
+            root.right-clicked();
+        }
+    }
+}

@@ -1,0 +1,233 @@
+// SPDX-FileCopyrightText: 2025 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { Panel } from "./panel.slint";
+import { Icon } from "./icon.slint";
+import { TextSm, TextSm } from "./txt.slint";
+import { Divider } from "./divider.slint";
+import { Button } from "./button.slint";
+import { Palette, Size, UISize, Importance } from "../theme.slint";
+import { Palette, Importance, Size, Font, FontSize, Utils, ColorHelpers} from "../theme.slint";
+
+export struct DropdownModel {
+    label: string,
+    value: string,
+    icon: string,
+}
+
+export component DropdownMenuItem inherits Rectangle {
+    in property <string> label;
+    in property <string> icon;
+    in property <bool> first: false;
+    in property <bool> last: false;
+    in property <bool> divider: !last;
+    in property <bool> selected: false;
+
+    // Private properties
+    private property <Importance> importance: selected ? Importance.primary : Importance.normal;
+    private property <brush> text-color: ColorHelpers.get-btn-content-color(importance, touchArea.pressed, true);
+    private property <brush> bg-color: ColorHelpers.get-btn-bg-color(importance, touchArea.pressed, true);
+
+    callback clicked;
+
+    height: Size.sz16;
+    background: bg-color;
+
+    HorizontalLayout {
+        height: parent.height;
+        spacing: Size.sz2;
+        padding-left: Size.sz4;
+        padding-right: Size.sz4;
+        alignment: space-between;
+
+        HorizontalLayout {
+            alignment: start;
+            spacing: Size.sz2;
+
+            if icon != "": VerticalLayout {
+                alignment: center;
+                Icon {
+                    name: icon;
+                    color: text-color;
+                }
+            }
+
+            TextSm {
+                text: label;
+                color: text-color;
+                horizontal-alignment: TextHorizontalAlignment.left;
+                vertical-alignment: center;
+            }
+        }
+
+        HorizontalLayout {
+            alignment: end;
+            if selected: VerticalLayout {
+                alignment: center;
+                Icon {
+                    name: "check";
+                    color: text-color;
+                }
+            }
+        }
+    }
+
+    touchArea := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    border-top-left-radius: first ? Size.sz6 : 0;
+    border-top-right-radius: first ? Size.sz6 : 0;
+    border-bottom-left-radius: last ? Size.sz6 : 0;
+    border-bottom-right-radius: last ? Size.sz6 : 0;
+
+    if !last: Divider {
+        y: parent.height - self.height;
+    }
+}
+
+export component Dropdown inherits Rectangle {
+    in property <string> id;
+    in property <string> title;
+    in property <string> placeholder;
+    in property <string> placeholder-icon: "";
+    in property <[DropdownModel]> model: [];
+    in-out property <int> selected-index: -1;
+    in-out property <string> selected-value;
+    in property <bool> enabled: true;
+    in property <bool> locked: false;
+
+    in-out property <bool> showing: false;
+
+    property <brush> fg-color: enabled ? Palette.content-primary : Palette.content-disabled;
+
+    callback changed(int, string);
+
+    z: 100;
+
+    function item-changed(index: int, value: string) {
+        self.selected-index = index;
+        self.selected-value = value;
+        changed(index, value);
+    }
+
+    VerticalLayout {
+        spacing: Size.sz2;
+        if title != "": HorizontalLayout {
+            padding-left: Size.sz4;
+            alignment: start;
+            TextSm {
+                text: title;
+                color: Palette.content-tertiary;
+            }
+        }
+
+        // Dropdown Line
+        Rectangle {
+            height: Size.sz14;
+            background: enabled ? Palette.background-primary-alternative : Palette.background-disabled;
+            border-radius: Size.sz6;
+            border-width: Size.sz0_25;
+            border-color: showing ? Palette.border-focus : Palette.background-hover;
+            HorizontalLayout {
+                padding-left: Size.sz4;
+                spacing: Size.sz2;
+
+                if (placeholder-icon != "" && selected-index == -1) || (selected-index != -1 && model[selected-index].icon != ""): VerticalLayout {
+                    alignment: center;
+                    Icon {
+                        name: selected-index == -1 ? placeholder-icon : model[selected-index].icon;
+                        color: fg-color;
+                    }
+                }
+
+                TextSm {
+                    horizontal-stretch: 1;
+                    text: selected-index == -1 ? placeholder : model[selected-index].label;
+                    color: fg-color;
+                    horizontal-alignment: TextHorizontalAlignment.left;
+                    vertical-alignment: TextVerticalAlignment.center;
+                }
+
+                VerticalLayout {
+                    padding: Size.sz4;
+                    spacing: Size.sz2;
+
+                    Icon {
+                        size: Size.sz6;
+                        name: locked ? "" : (showing ? "chevron-up" : "chevron-down");
+                        colorize: fg-color;
+                    }
+                }
+            }
+
+            TouchArea {
+                clicked => {
+                    if (enabled && !locked) {
+                        showing = !showing;
+                        debug("Clicked on dropdown");
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component DropdownOverlay inherits Rectangle {
+    background: transparent;
+
+    in property <length> dropdown-x;
+    in property <length> dropdown-y;
+    in property <length> dropdown-width;
+    in property <[DropdownModel]> model: [];
+    in property <int> selected-index: -1;
+    in property <bool> scrollable: false;
+    in property <int> scrollable-window-size: 3;
+    in property <bool> open-above: false;
+
+    callback item-selected(int, string);
+    callback touched-off();
+
+    private property <length> panel-height: scrollable ? Math.min(scrollable-window-size, model.length) * Size.sz16 : model.length * Size.sz16;
+
+    dropdown-panel := Panel {
+        width: dropdown-width;
+        // Scrollable versions show a divider clipping outside the panel
+        // unless the bottom pixel is cut
+        height: panel-height - (scrollable && panel-height >= 1px ? 1px : 0px);
+        x: dropdown-x;
+        y: open-above ? dropdown-y - panel-height - Size.sz2 : dropdown-y + Size.sz14;
+        z: 100;
+
+        Flickable {
+            height: panel-height;
+            width: parent.width;
+            viewport-height: model.length * Size.sz16;
+            viewport-width: parent.width;
+
+            VerticalLayout {
+                spacing: Size.zero;
+
+                for entry[index] in model: DropdownMenuItem {
+                    label: entry.label;
+                    icon: entry.icon;
+                    first: index == 0;
+                    last: index == model.length - 1;
+                    selected: index == selected-index;
+
+                    clicked => {
+                        item-selected(index, entry.value);
+                    }
+                }
+            }
+        }
+    }
+
+    TouchArea {
+        clicked => {
+            touched-off();
+        }
+    }
+}

@@ -1,0 +1,58 @@
+appId = "0x6479c801d668ca185c682acd5484df85"
+publisher = "Ethereum Foundation"
+description = "Ethereum Signer"
+version = "0.1.0"
+memory = []
+syscall = []
+qrMatchRules = []
+
+[appName]
+en = "eth-signer"
+
+[servers]
+
+[fixedSids]
+
+[permissions]
+"os/fs" = [
+    "AsyncCopyBlock",
+    "AsyncRead",
+    "AsyncWrite",
+    "AtomicCopy",
+    "CloseDir",
+    "CloseFile",
+    "CreateDirMessage",
+    "Flush",
+    "GetMetadata",
+    "MapFileMessage",
+    "NextEntry",
+    "OpenDirMessage",
+    "OpenFileMessage",
+    "ReadFile",
+    "Remove",
+    "Rename",
+    "SeekFile",
+    "SetLen",
+    "SubscribeFilesystemEvent",
+    "TruncateFile",
+    "WriteFile",
+]
+"os/gui-server" = [
+    "AnimateNextFrame",
+    "HideKeyboard",
+    "RegisterAppMessage",
+    "RequestRedraw",
+    "ShowModal",
+    "SubmitFrame",
+    "UpdateKeyboard",
+]
+"os/security" = ["GetAppSeed"]
+"os/settings" = [
+    "GetDebugTouch",
+    "GetDeviceName",
+    "GetLocale",
+    "GetPrimeColor",
+    "GetSystemTheme",
+    "SubscribeDebugTouch",
+    "SubscribeSystemTheme",
+]

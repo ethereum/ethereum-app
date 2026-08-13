@@ -1,0 +1,99 @@
+// SPDX-FileCopyrightText: 2024 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import {Palette, Size} from "../theme.slint";
+import {Circle} from "./circle.slint";
+import {Icon} from "./icon.slint";
+import {TimerLoader} from "./loader.slint";
+import {TextMd} from "./txt.slint";
+
+
+export component StepLine {
+    in property <bool> loading: false;
+    in property <bool> done: false;
+    in property <string> text: "...";
+    in property <bool> error: false;
+    in property <string> done-icon: "check";
+    in property <string> pending-icon: "arrow-right";
+
+    function get-icon() -> string {
+        if loading {
+            return ""; // should use TimerLoader
+        }
+        if error {
+            return "alert";
+        }
+        if done {
+            return done-icon;
+        }
+        return pending-icon;
+    }
+
+    function get-color() -> brush {
+        if (error) {
+            return Palette.content-notice;
+        } else {
+            if (loading) {
+                return Palette.content-primary;
+            } else {
+                return Palette.content-tertiary;
+            }
+        }
+    }
+
+    HorizontalLayout {
+        alignment: start;
+        spacing: 8px;
+
+        Rectangle {
+            width: 32px;
+            VerticalLayout {
+                alignment: center;
+                if loading && !error: TimerLoader { }
+                if !loading: Icon {
+                    name: get-icon();
+                    color: get-color();
+                }
+            }
+        }
+
+        stage2-text := TextMd {
+            text: root.text;
+            color: get-color();
+            wrap: TextWrap.no-wrap;
+            overflow: TextOverflow.elide;
+        }
+    }
+}
+
+export component StepLineSection inherits HorizontalLayout {
+    alignment: center;
+    VerticalLayout {
+        spacing: Size.sz4;
+        vertical-stretch: 0;
+        padding-left: Size.sz4;
+        padding-right: Size.sz4;
+
+        @children
+    }
+}
+
+export struct StepModel {
+    label: string,
+    icon: string,
+    completed: bool,
+    in-progress: bool,
+    error: bool,
+}
+
+export component StepList inherits StepLineSection {
+    in property <[StepModel]> steps;
+
+    for step in steps: StepLine {
+        loading: step.in-progress;
+        done: step.completed;
+        text: step.label;
+        error: step.error;
+        pending-icon: step.icon;
+    }
+}

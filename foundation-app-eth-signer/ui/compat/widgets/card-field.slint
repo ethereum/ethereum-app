@@ -1,0 +1,18 @@
+// SPDX-FileCopyrightText: 2025 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { HeadingSm, TextMd, TextSm } from "./txt.slint";
+import { CardColor, UISize, Palette, Size } from "../theme.slint";
+import { CardCircle } from "./card-circle.slint";
+import { Icon } from "./icon.slint";
+import { LineCard } from "./line-card.slint";
+import { TextLg } from "../widgets/txt.slint";
+
+
+export component CardField inherits Rectangle {
+    height: Size.sz8;
+    background: Palette.background-primary;
+    border-radius: Size.sz4;
+
+    @children
+}

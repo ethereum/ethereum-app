@@ -1,0 +1,36 @@
+// SPDX-FileCopyrightText: 2023 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { Icon } from "./icon.slint";
+import { Palette, Size } from "../theme.slint";
+
+export component IconToggle inherits Rectangle {
+    // Override inherited properties
+    width: Size.sz6;
+    height: Size.sz6;
+
+    // Public properties
+    in-out property <bool> checked: false;
+    in property <string> id;
+    in property <string> checked-icon: "locked";
+    in property <string> unchecked-icon: "unlocked";
+    in property <brush> colorize: Palette.content-primary;
+
+    // Callbacks
+    callback clicked(string);
+    if checked: Icon {
+        name: checked-icon;
+        colorize: colorize;
+    }
+    if !checked: Icon {
+        name: unchecked-icon;
+        colorize: colorize;
+    }
+
+    touchArea := TouchArea {
+        clicked => {
+            checked = !checked;
+            clicked(id);
+        }
+    }
+}

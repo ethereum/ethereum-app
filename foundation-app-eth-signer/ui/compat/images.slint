@@ -1,0 +1,11 @@
+// Compat image loading: `Images` is the ui2 global (image/icon callbacks,
+// bound by app_ui2! and re-bound in main.rs to serve vendored legacy icons).
+// `CompatImages` carries the legacy `common`/`nine-slice` loaders, bound in
+// main.rs over slint_keyos_platform::raw_image::load_raw_image.
+import { Images } from "@ui/theme.slint";
+export { Images }
+
+export global CompatImages {
+    pure callback common(string) -> image;
+    pure callback nine-slice(string) -> image;
+}

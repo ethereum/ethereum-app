@@ -1,0 +1,48 @@
+// SPDX-FileCopyrightText: 2024 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { Palette, Utils, Images, Size, CardColor, UISize } from "../theme.slint";
+
+export component CardPill inherits Rectangle {
+    in property <CardColor> line-color: CardColor.blue;
+
+    width: 170px;
+    height: Size.sz16;
+
+    // #IF PREVIEW
+    // Rectangle {
+    //     width: root.width;
+    //     height: root.height;
+    //     border-radius: Size.sz8;
+    //     background: Palette.black.transparentize(0.20);
+    //     border-width: Size.sz0_5;
+    //     border-color: @linear-gradient(180deg, Utils.get-card-line-top-color(line-color) 0%, Utils.get-card-line-bottom-color(line-color) 100%);
+    // }
+    // #ELSE
+    Image {
+        /*
+            width,
+            height,
+            background_color,
+            background_gradient,
+            border_radius,
+            border_width,
+            border_gradient,
+            outer_border_width,
+            outer_border_gradient,
+            template, (e.g., "lines" means it will draw the lines)
+        */
+        source: Utils.line-card(
+            root.width, root.height, Palette.black,
+            [], // No background gradient
+            Size.sz8, Size.sz0_5, [
+            { color: Utils.get-card-line-top-color(line-color), stop: 0% },
+            { color: Utils.get-card-line-bottom-color(line-color), stop: 100% }
+        ],
+            Size.zero, [],
+            "");
+    }
+    // #ENDIF
+
+    @children
+}

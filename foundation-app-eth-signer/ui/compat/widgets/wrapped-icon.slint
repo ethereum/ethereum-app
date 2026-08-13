@@ -1,0 +1,20 @@
+// SPDX-FileCopyrightText: 2025 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { IconSize, Palette } from "../theme.slint";
+import { JumboIcon } from "./jumbo-icon.slint";
+import { Icon } from "./icon.slint";
+
+export component WrappedIcon inherits JumboIcon {
+    // "jumbo-circle", "jumbo-shield", "jumbo-underbar"
+    in property <string> outer-icon: "jumbo-circle";
+    in property <string> inner-icon: "check";
+
+    name: outer-icon;
+
+    Icon {
+        name: inner-icon;
+        size: IconSize.px96;
+        color: Palette.content-brand;
+    }
+}

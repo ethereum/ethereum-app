@@ -1,0 +1,56 @@
+// SPDX-FileCopyrightText: 2024 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { VerticalBox } from "std-widgets.slint";
+import { CurrentTheme, Palette, Size, Utils } from "../theme.slint";
+
+component Dot {
+    in property <brush> border-color:  #ffffff;
+    in property <length> border-width: 1px;
+    in property <color> fill:  #e0e0e0;
+    in property <length> radius: 16px;
+
+    Image {
+        width: 2 * radius;
+        height: 2 * radius;
+        source: Utils.circle(radius, border-width, border-color, fill, [4, 4]);
+    }
+}
+
+export component Pin {
+    padding: 8px;
+    width: 400px;
+    in property <color> border-color: CurrentTheme.is-dark ? Palette.white : Palette.background-brand-pressed;
+    in property <color> last-border-color:  Palette.content-tertiary;
+    in property <length> border-width: Size.sz0_25;
+    in property <color> fill: CurrentTheme.is-dark ? Palette.background-primary : Palette.background-brand-pressed;
+    in property <length> radius: Size.sz4;
+    in property <length> spacing: Size.sz10;
+
+    in property <[int]> dots: [1, 1, 1, -1, -1, -1, -1];
+
+    private property <int> cols: Math.floor(root.width / (2 * radius + spacing));
+    private property <int> rows: Math.ceil(dots.length / Math.max(1, cols - 1));
+
+    VerticalLayout {
+        alignment: start;
+        spacing: 8px;
+
+        for row in rows: HorizontalLayout {
+            alignment: center;
+            spacing: root.spacing;
+            for col in cols: Dot {
+                function is-last() -> bool {
+                    (row * cols + col) == (dots.length - 1)
+                }
+                function in-range() -> bool {
+                    (row * cols + col) < dots.length
+                }
+                border-color: is-last() ? last-border-color : border-color;
+                border-width: in-range() ? root.border-width : 0;
+                fill: dots[row * cols + col] > 0 && in-range() ? root.fill : Colors.transparent;
+                //== -1 ? Colors.transparent : in-range() ? root.fill : Colors.transparent;
+            }
+        }
+    }
+}

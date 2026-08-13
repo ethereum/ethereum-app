@@ -1,0 +1,255 @@
+// SPDX-FileCopyrightText: 2025 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: MIT OR Apache-2.0
+import { Images, Size, Palette, UISize } from "../theme.slint";
+import { Utils } from "../utils.slint";
+
+import { Icon } from "icon.slint";
+import { PasswordInput } from "input.slint";
+import { HeadingMd, TextSm, TextMd, TextLg } from "txt.slint";
+import { Shimmer } from "shimmer.slint";
+
+component PinDot inherits Rectangle {
+    in property <length> size: Size.sz8;
+    in property <bool> filled: false;
+    in property <bool> hidden: false;
+    in property <bool> animated: true;
+    in property <bool> placeholder;
+    in property <bool> pulsating;
+    property <brush> fill-color: Palette.content-secondary;
+
+    clip: true;
+    width: size;
+    height: size;
+    border-radius: self.width / 2;
+    border-width: 1px;
+    border-color: placeholder ? transparent : Palette.border-primary;
+    opacity: hidden ? 0 : 1;
+
+    if !placeholder: fill := Rectangle {
+        property <length> fill-size: filled ? parent.width : 0px;
+        animate fill-size {
+            duration: animated ? 150ms : 0;
+            easing: ease-in-out;
+        }
+
+        width: fill-size;
+        height: fill-size;
+        border-width: 1px;
+        background: fill-size != 0 ? root.fill-color : transparent;
+        border-radius: fill-size / 2;
+    }
+
+    if placeholder: placeholder := Icon {
+        name: "pin-dot-patterned";
+        size: Size.sz8;
+        colorize: Palette.border-secondary;
+    }
+
+    states [
+        default when !pulsating: {
+            fill-color: Palette.content-secondary;
+        }
+        pulsating when pulsating: {
+            fill-color: Palette.content-tertiary-inverse;
+            in {
+                animate fill-color {
+                    duration: 500ms;
+                    easing: ease-in-out;
+                    direction: alternate;
+                    iteration-count: -1;
+                }
+            }
+        }
+    ]
+}
+
+export component LoginLayout inherits VerticalLayout {
+    padding-top: Size.sz16;
+    padding-left: Size.sz6;
+    padding-right: Size.sz6;
+    padding-bottom: Size.sz6;
+    spacing: Size.sz10;
+}
+
+export component PinEntry inherits VerticalLayout {
+    in property <bool> animated;
+    in property <bool> pin-incorrect: false;
+    in property <bool> is-check-ongoing;
+    in-out property <string> pin <=> hidden-input.text;
+    out property <int> pin-length: Utils.string-length(pin);
+    in property <int> locked-len: 0;
+    out property <bool> has-focus: hidden-input.has-focus;
+    in property <string> accept-button-text;
+    in property <bool> accept-button-enabled: true;
+
+    callback accepted();
+
+    private property <bool> single-row: pin-length < 9;
+
+    forward-focus: hidden-input;
+
+    alignment: start;
+
+    Rectangle {
+        Image {
+            in property <bool> has-focus <=> root.has-focus;
+
+            source: Images.common("images/screen-heading-shield");
+            width: single-row ? 93px : 151px;
+            height: single-row ? 96px : 156px;
+
+            opacity: animated ? 0% : 100%;
+
+            changed has-focus => {
+                self.opacity = 100%;
+            }
+
+            animate opacity {
+                duration: animated ? 300ms : 0;
+                easing: ease-in-out;
+            }
+        }
+
+        hidden-input := TextInput {
+            height: 0px;
+            single-line: true;
+            input-type: number;
+            accept-button-text: root.accept-button-text;
+            accept-button-enabled: root.accept-button-enabled;
+            accepted => {
+                root.accepted();
+            }
+            key-pressed(event) => {
+                // If we have a locked prefix and this is a backspace that would delete below the prefix length
+                if (root.locked-len != 0 && event.text == Key.Backspace && pin-length <= locked-len) {
+                    return accept;
+                }
+                if is-check-ongoing {
+                    return accept;
+                }
+                if pin-length >= 12 && event.text != Key.Backspace && event.text != Key.Return && event.text != Key.Delete {
+                    return accept;
+                }
+                reject
+            }
+        }
+
+        HorizontalLayout {
+            alignment: center;
+
+            VerticalLayout {
+                spacing: Size.sz4;
+                padding-top: 10px;
+                padding-bottom: 10px;
+
+                HorizontalLayout {
+                    spacing: Size.sz4;
+                    for i in [0, 1, 2, 3, 4, 5]: PinDot {
+                        pulsating: root.is-check-ongoing;
+                        filled: i < pin-length;
+                    }
+                    if single-row && pin-length >= 7: PinDot {
+                        pulsating: root.is-check-ongoing;
+                        filled: true;
+                    }
+                    if single-row && pin-length >= 8: PinDot {
+                        pulsating: root.is-check-ongoing;
+                        filled: true;
+                    }
+                    if single-row: PinDot {
+                        placeholder: true;
+                    }
+                }
+
+                if !single-row: HorizontalLayout {
+                    spacing: Size.sz4;
+                    for i in [6, 7, 8, 9, 10, 11]: PinDot {
+                        pulsating: root.is-check-ongoing;
+                        placeholder: i == pin-length;
+                        filled: i < pin-length;
+                        hidden: i > pin-length;
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component PasswordEntry inherits VerticalLayout {
+    in property <bool> animated;
+    in-out property <string> password <=> password-input.text;
+    in property <bool> is-check-ongoing;
+    in property <int> locked-len: 0;
+    out property <bool> has-focus: password-input.has-focus;
+    in property <string> accept-button-text;
+    in property <bool> accept-button-enabled: true;
+
+    callback accepted(string);
+
+    alignment: start;
+    padding-top: Size.sz6;
+    padding-bottom: Size.sz6;
+
+    forward-focus: password-input;
+
+    Rectangle {
+        HorizontalLayout {
+            alignment: center;
+
+            // move the shield up, placing input in the center
+            y: -Size.sz11;
+
+            Image {
+                in property <bool> has-focus <=> root.has-focus;
+
+                source: Images.common("images/screen-heading-shield");
+                width: 134px;
+                height: 138px;
+
+                opacity: animated ? 0% : 100%;
+
+                changed has-focus => {
+                    self.opacity = 100%;
+                }
+
+                animate opacity {
+                    duration: animated ? 300ms : 0;
+                    easing: ease-in-out;
+                }
+            }
+        }
+
+        password-input := PasswordInput {
+            keep-focus-after-accept: true;
+            accept-button-text: root.accept-button-text;
+            accept-button-enabled: root.accept-button-enabled;
+            accepted => {
+                root.accepted(self.text);
+            }
+            key-pressed(event) => {
+                // If we have a locked prefix and this is a backspace that would delete below the prefix length
+                if (root.locked-len != 0 && event.text == Key.Backspace && Utils.string-length(self.text) <= root.locked-len) {
+                    return accept;
+                }
+                reject
+            }
+        }
+    }
+
+    states [
+        default when !is-check-ongoing: {
+            password-input.text-color: Palette.content-primary;
+        }
+        pulsating when is-check-ongoing: {
+            password-input.text-color: Palette.content-tertiary;
+            in {
+                animate password-input.text-color {
+                    duration: 500ms;
+                    easing: ease-in-out;
+                    direction: alternate;
+                    iteration-count: -1;
+                }
+            }
+        }
+    ]
+}

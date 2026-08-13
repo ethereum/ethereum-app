@@ -1,0 +1,16 @@
+// SPDX-FileCopyrightText: 2023 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import {Size, Palette} from "../theme.slint";
+
+export component Circle inherits Rectangle {
+    // Override inherited properties
+    width: size;
+    height: size;
+    border-radius: size / 2;
+    background: Palette.white;
+
+    // Public properties
+    in property <string> id;
+    in property <length> size: Size.sz16;
+}

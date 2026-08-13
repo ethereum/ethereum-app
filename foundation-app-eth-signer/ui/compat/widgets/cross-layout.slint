@@ -1,0 +1,25 @@
+// SPDX-FileCopyrightText: 2023 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+
+export component CrossLayout inherits VerticalLayout {
+    // Override inherited properties
+    alignment: vertical-alignment;
+
+    // Public properties
+    in property <LayoutAlignment> vertical-alignment: start;
+    in property <LayoutAlignment> horizontal-alignment: start;
+
+    HorizontalLayout {
+        alignment: horizontal-alignment;
+
+        @children
+    }
+}
+
+export component CenterLayout inherits CrossLayout {
+    vertical-alignment: center;
+    horizontal-alignment: center;
+
+    @children
+}

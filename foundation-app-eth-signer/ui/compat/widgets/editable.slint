@@ -1,0 +1,51 @@
+// SPDX-FileCopyrightText: 2023 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import {IconButton} from "./icon-button.slint";
+import {Icon} from "./icon.slint";
+import {Size, Palette, Importance} from "../theme.slint";
+
+export component Editable {
+    in property <bool> edit-mode;
+    in property <bool> drag-and-drop: true;
+
+    callback edit();
+
+    height: 96px;
+
+    HorizontalLayout {
+        // width: parent.width;
+        alignment: stretch;
+        spacing: Size.sz2;
+
+        if edit-mode && drag-and-drop: VerticalLayout {
+            padding: Size.sz3;
+            alignment: center;
+            if edit-mode: Icon {
+                name: "menu";
+                color: Palette.content-tertiary;
+                size: Size.sz8;
+            }
+        }
+
+        HorizontalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            @children
+        }
+
+        if edit-mode: VerticalLayout {
+            alignment: center;
+            IconButton {
+                icon: "edit";
+                importance: Importance.normal;
+                size: Size.sz10;
+                icon-size: Size.sz10;
+
+                clicked => {
+                    edit()
+                }
+            }
+        }
+    }
+}

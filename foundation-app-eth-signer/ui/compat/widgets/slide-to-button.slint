@@ -1,0 +1,138 @@
+// SPDX-FileCopyrightText: 2023 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+
+import {Icon} from "./icon.slint";
+import {TextMd} from "./txt.slint";
+import {DarkPalette} from "../palettes/dark-palette.slint";
+import {LightPalette} from "../palettes/light-palette.slint";
+import {Button} from "./button.slint";
+import {TimerLoader} from "./loader.slint";
+import {CurrentTheme, Size, Palette, Images} from "../theme.slint";
+
+export component SlideToButton inherits Rectangle {
+    border-radius: Size.sz6;
+    height: Size.sz16 + (Size.sz1 * 2);
+
+    // Private properties
+    private property <length> inner-width: self.width - Size.sz1 * 2;
+    private property <length> inner-height: self.height - Size.sz1 * 2;
+    private property <length> inner-element-width: thumb.width;
+    private property <length> max-slide-offset: inner-width - inner-element-width;
+    private property <length> slide-offset: min(max-slide-offset, max(Size.zero, (touchArea.pressed ? touchArea.mouse-x - touchArea.pressed-x : 0)));
+    private property <bool> has-activated: false;
+
+    // Public properties
+    in property <string> id;
+    in property <string> label;
+    in property <string> icon: "arrow-right";
+    in property <string> info-label;
+    in property <string> activated-label;
+    in property <string> activated-icon;
+    in property <brush> activated-color: CurrentTheme.is-dark ? DarkPalette.content-link : LightPalette.content-link;
+    in property <bool> is-dark: CurrentTheme.is-dark;
+
+    // Callbacks
+    callback activated(string);
+
+    // Nine-slice background image
+    Image {
+        width: 100%;
+        height: 100%;
+        source: is-dark ? Images.nine-slice("images/slide-to-bg-dark") : Images.nine-slice("images/slide-to-bg-light");
+
+        // Center the activated-label in the image
+        HorizontalLayout {
+            alignment: center;
+            spacing: Size.sz2;
+
+            if has-activated: VerticalLayout {
+                alignment: center;
+
+                if activated-icon != "": Icon {
+                    name: activated-icon;
+                    color: activated-color;
+                }
+                if activated-icon == "": TimerLoader {
+                    loader-color: activated-color;
+                }
+            }
+
+            TextMd {
+                text: has-activated ? activated-label : info-label;
+                color: has-activated ? activated-color : (is-dark ? DarkPalette.content-disabled : LightPalette.content-disabled);
+                horizontal-alignment: left;
+                vertical-alignment: center;
+            }
+        }
+    }
+    
+    // Target outline
+    target := Image {
+        x: parent.width - self.width - Size.sz1;
+        width: thumb.width;
+        height: inner-height;
+        source: is-dark ? Images.nine-slice("images/slide-to-target-dark") : Images.nine-slice("images/slide-to-target-light");
+        opacity: has-activated ? 0 : 1;
+    }
+
+    // Movable thumb
+    HorizontalLayout {
+        x: Size.sz1 + slide-offset;
+        y: Size.sz1;
+        height: inner-height;
+        width: inner-width;
+        thumb := Rectangle {
+            width: self.preferred-width;
+            height: inner-height;
+            border-radius: Size.sz6;
+            background: is-dark ? DarkPalette.content-notice : LightPalette.content-brand;
+            horizontal-stretch: 0;
+            opacity: has-activated ? 0 : 1;
+
+            HorizontalLayout {
+                alignment: start;
+                horizontal-stretch: 0;
+                spacing: Size.sz2;
+                padding-left: Size.sz4;
+                padding-right: Size.sz4;
+
+                right-icon := VerticalLayout {
+                    alignment: center;
+
+                    Icon {
+                        name: root.icon;
+                        color: Palette.white;
+                    }
+                }
+
+                label := TextMd {
+                    text: root.label;
+                    color: Palette.white;
+                    horizontal-alignment: right;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        Rectangle {
+            horizontal-stretch: 1;
+        }
+    }
+
+    touchArea := TouchArea {
+        moved() => {
+            // Make sure to only activate at most once per touch/release cycle
+            if (slide-offset >= max-slide-offset && !root.has-activated) {
+                debug("DONE!");
+                root.has-activated = true;
+                root.activated(id);
+            }
+        }
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.up) {
+                // root.has-activated = false;
+            }
+        }
+    }
+}

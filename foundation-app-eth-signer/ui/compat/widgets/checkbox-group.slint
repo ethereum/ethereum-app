@@ -1,0 +1,51 @@
+// SPDX-FileCopyrightText: 2023 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import {Size} from "../theme.slint";
+
+import {Checkbox} from "./checkbox.slint";
+import {TextSm} from "./txt.slint";
+
+export struct CheckboxGroupModel {
+    name: string,
+    value: string,
+    checked: bool,
+    enabled: bool,
+}
+
+export component CheckboxGroup inherits VerticalLayout {
+    spacing: Size.sz4;
+
+    // Public properties
+    in-out property <[CheckboxGroupModel]> model: [];
+    in property <bool> label-right;
+
+    // Callbacks
+    callback changed(int, string);
+
+    function item-changed(index: int, value: string) {
+        model[index].checked = !model[index].checked;
+        changed(index, value);
+    }
+
+    for entry[index] in model: HorizontalLayout {
+        spacing: Size.sz6;
+        if !label-right: TextSm {
+            text: entry.name;
+            vertical-alignment: TextVerticalAlignment.center;
+        }
+        Checkbox {
+            controlled: true;
+            checked: entry.checked;
+            enabled: entry.enabled;
+            clicked => {
+                item-changed(index, entry.value);
+            }
+        }
+
+        if label-right: TextSm {
+            text: entry.name;
+            vertical-alignment: TextVerticalAlignment.center;
+        }
+    }
+}

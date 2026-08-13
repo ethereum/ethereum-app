@@ -1,0 +1,141 @@
+// SPDX-FileCopyrightText: 2023 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+
+import {Icon} from "./icon.slint";
+import {HeadingSm} from "./txt.slint";
+import {Palette, Size} from "../theme.slint";
+
+export struct SegmentModel {
+    label: string,
+    icon: string}
+
+export component SegmentedSelector inherits Rectangle {
+    // Override inherited properties
+    background: Palette.background-primary-alternative;
+    border-radius: Size.sz13 / 2;
+    height: Size.sz13;
+    clip: false;
+
+    // Private properties
+    private property <brush> text-color: Palette.content-primary-inverse;
+    private property <brush> bg-color: Palette.background-brand;
+    private property <length> x-offset: Size.sz6 + 12px;
+
+    // Public properties
+
+    // This property enforces that the component won't change the selected_index when the user clicks on a segment
+    // This is helpful when the selected_index is controlled externally, otherwise the binding will be broken
+    // See: https://github.com/slint-ui/slint/issues/5990
+    in property <bool> one-way-selected-index: false;
+    in property <string> id;
+    in property <[SegmentModel]> segments;
+    in-out property <int> selected_index: 2;
+    in property <bool> enabled: true;
+
+    // Callbacks
+    callback clicked(string, int);
+
+    HorizontalLayout {
+        padding-left: Size.sz1;
+        padding-right: Size.sz1;
+        alignment: stretch;
+        width: 100%;
+
+        for segment[index] in segments: Rectangle {
+            width: x-offset;
+            HorizontalLayout {
+                alignment: center;
+                horizontal-stretch: 0;
+                VerticalLayout {
+                    alignment: center;
+                    Icon {
+                        width: 24px;
+                        name: segment.icon;
+                        color: index < selected_index ? Palette.content-tertiary : Palette.content-tertiary.transparentize(0.99);
+                    }
+                }
+            }
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+        }
+
+        for segment[index] in segments: Rectangle {
+            width: x-offset;
+            HorizontalLayout {
+                alignment: center;
+                horizontal-stretch: 0;
+                VerticalLayout {
+                    alignment: center;
+                    Icon {
+                        name: segment.icon;
+                        color: index > selected_index ? Palette.content-tertiary : Palette.content-tertiary.transparentize(0.99);
+                    }
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        background: enabled ? bg-color : bg-color.mix(Palette.white, 0.5);
+        x: Size.sz1 + (selected_index * x-offset);
+        width: parent.width - (Size.sz1 * 2) - ((segments.length - 1) * x-offset);
+        height: parent.height - (Size.sz1 * 2);
+        border-radius: Size.sz6;
+
+        states [
+            pressed when touch.pressed && enabled: {
+                background: bg-color.mix(Palette.black, 0.8);
+            }
+        ]
+
+        HorizontalLayout {
+            spacing: Size.sz1;
+            alignment: center;
+
+            VerticalLayout {
+                alignment: center;
+                left-icon-el := Icon {
+                    name: segments[selected_index].icon;
+                    color: Palette.white;
+                }
+            }
+
+            VerticalLayout {
+                alignment: center;
+                unchecked-sel-text-el := HeadingSm {
+                    text: segments[selected_index].label;
+                    color: Palette.white;
+                }
+            }
+        }
+    }
+
+    // Left half: moves selection left; right half: moves selection right
+    touch := TouchArea {
+        x: -(parent.width / 10);
+        y: -Size.sz4;
+        width: parent.width + (parent.width / 10) * 2;
+        height: parent.height + (Size.sz4 * 2);
+        clicked => {
+            if (enabled) {
+                if (self.pressed-x < parent.width / 2) {
+                    if (!one-way-selected-index) {
+                        selected_index = mod(selected_index - 1 + segments.length, segments.length);
+                        clicked(id, selected_index);
+                    } else {
+                        clicked(id, mod(selected_index - 1 + segments.length, segments.length));
+                    }
+                } else {
+                    if (!one-way-selected-index) {
+                        selected_index = mod(selected_index + 1, segments.length);
+                        clicked(id, selected_index);
+                    } else {
+                        clicked(id, mod(selected_index + 1, segments.length));
+                    }
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,176 @@
+// SPDX-FileCopyrightText: 2025 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { BasePage, Icon, NavHeader, QrCodeCard, TextSm, CompressedBtcAddress, BtcAddress } from "../../../compat/widgets.slint";
+import { Size, Palette } from "../../../compat/theme.slint";
+import { TR2, TrId } from "../../../gen/tr.slint";
+
+import { AccountProps } from "../props.slint";
+import { Navigate } from "../../../gen/navigate.slint";
+import { Callbacks } from "../../../callbacks.slint";
+import { Overlay } from "../../../widgets/overlay.slint";
+import { ListView } from "std-widgets.slint";
+
+component AddressSwitch inherits Rectangle {
+    in property <bool> enabled;
+    in property <string> icon;
+
+    callback clicked();
+
+    height: Size.sz15;
+
+    VerticalLayout {
+        alignment: center;
+        HorizontalLayout {
+            alignment: center;
+            Icon {
+                name: root.icon;
+                color: enabled ? Palette.content-primary : Palette.content-tertiary;
+                size: Size.sz10;
+            }
+        }
+    }
+
+    TouchArea {
+        enabled: root.enabled;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component ExploreAddressPage inherits BasePage {
+    in-out property <AccountProps> props;
+
+    // Ethereum: one keychain, one address format — no filter drawer.
+    property <[string]> addresses: Callbacks.account-addresses(props.account-id);
+
+    property <int> selected-address: -1;
+    property <bool> can-subtract: selected-address > 0;
+    property <bool> can-add: selected-address < addresses.length - 1;
+
+    function subtract-address() {
+        if can-subtract {
+            selected-address = selected-address - 1;
+        }
+    }
+
+    function add-address() {
+        if can-add {
+            selected-address = selected-address + 1;
+        }
+    }
+
+    property <length> item-height: Size.sz14;
+
+    VerticalLayout {
+        NavHeader {
+            title: TR2.lookup(TrId.ExploreAddressesTitle);
+            clicked => {
+                Navigate.backward();
+            }
+        }
+
+        ListView {
+            viewport-height: 1000 * item-height;
+            viewport-width: parent.width;
+            height: 688px;
+            width: parent.width;
+
+            vertical-scrollbar-policy: always-off;
+            mouse-drag-pan-enabled: true;
+
+            for address[index] in addresses: Rectangle {
+                width: root.width;
+                clip: true;
+                height: item-height;
+
+                HorizontalLayout {
+                    padding-left: Size.sz8;
+
+                    alignment: start;
+                    spacing: Size.sz4;
+                    TextSm {
+                        vertical-alignment: center;
+                        horizontal-alignment: right;
+                        text: "\{index}:";
+                        width: 36px;
+                        overflow: clip;
+                        wrap: no-wrap;
+                    }
+
+                    VerticalLayout {
+                        alignment: center;
+                        CompressedBtcAddress {
+                            address: address;
+                        }
+                    }
+                }
+
+                TouchArea {
+                    clicked => {
+                        selected-address = index
+                    }
+                }
+            }
+        }
+    }
+
+    Overlay {
+        open: selected-address > -1;
+        title: TR2.format(TrId.ExploreAddressesDetailTitle, [selected-address]);
+        closed => {
+            selected-address = -1;
+        }
+
+        HorizontalLayout {
+            alignment: center;
+
+            VerticalLayout {
+                width: 424px;
+                alignment: start;
+                spacing: Size.sz3;
+
+                BtcAddress {
+                    address: addresses[selected-address];
+                    primary-color: Palette.content-primary;
+                    secondary-color: Palette.content-tertiary;
+                }
+
+                VerticalLayout {
+                    alignment: start;
+
+                    AddressSwitch {
+                        enabled: can-subtract;
+                        icon: "chevron-up";
+                        clicked => {
+                            subtract-address();
+                        }
+                    }
+
+                    HorizontalLayout {
+                        alignment: center;
+
+                        QrCodeCard {
+                            data: addresses[selected-address];
+                        }
+                    }
+
+                    AddressSwitch {
+                        enabled: can-add;
+                        icon: "chevron-down";
+                        clicked => {
+                            add-address();
+                        }
+                    }
+                }
+
+                TextSm {
+                    text: TR2.lookup(TrId.ExploreAddressesDetailContent);
+                    color: Palette.content-tertiary;
+                    horizontal-alignment: center;
+                }
+            }
+        }
+    }
+}
