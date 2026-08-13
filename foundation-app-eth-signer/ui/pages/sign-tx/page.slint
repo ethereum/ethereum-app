@@ -1,0 +1,325 @@
+// SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: MIT
+
+// Ethereum transaction signing, following the Bitcoin app's sign-psbt page:
+// a confirmation card (From/To/ChainId/Amount/Max Fees), a data warning with
+// a second swipeable card carrying the ERC-8213 calldata digest + its QR,
+// the slide-to-sign control, and a signature-QR success page.
+
+import { NavHeader, BasePage, TextSm, TextMd, Button, SlideToButton, PageBody, ContentSection, ButtonSection, JumboIconPageBody, TimerCircularProgress, HeadingMd, WrappedIcon, QrCodeCard, LineCard, Pagination, Icon } from "../../compat/widgets.slint";
+import { Palette, Size, Importance, CardColor } from "../../compat/theme.slint";
+import { TR2, TrId } from "../../gen/tr.slint";
+
+import { SignTxProps } from "./props.slint";
+import { SignTx, SignTxState, EthTxView } from "../../sign-tx.slint";
+import { Navigate } from "../../gen/navigate.slint";
+
+component TxField inherits VerticalLayout {
+    in property <string> label;
+    in property <string> value;
+
+    spacing: Size.sz0_5;
+
+    TextSm {
+        text: label;
+        color: Palette.white.transparentize(0.4);
+    }
+
+    TextMd {
+        text: value;
+        color: Palette.white;
+        wrap: word-wrap;
+    }
+}
+
+component TxInfoCard inherits LineCard {
+    in property <EthTxView> tx;
+
+    card-color: CardColor.blue;
+    width: 448px;
+    height: 388px;
+
+    VerticalLayout {
+        alignment: start;
+        spacing: Size.sz2;
+        padding: Size.sz4;
+
+        TxField {
+            label: TR2.lookup(TrId.SignTxFrom);
+            value: tx.from;
+        }
+
+        TxField {
+            label: TR2.lookup(TrId.SignTxTo);
+            value: tx.to;
+        }
+
+        HorizontalLayout {
+            spacing: Size.sz8;
+
+            TxField {
+                label: TR2.lookup(TrId.SignTxChainId);
+                value: tx.chain-id;
+            }
+
+            TxField {
+                label: TR2.lookup(TrId.SignTxAmount);
+                value: tx.amount;
+            }
+        }
+
+        TxField {
+            label: TR2.lookup(TrId.SignTxMaxFees);
+            value: tx.max-fees;
+        }
+    }
+}
+
+component DataHashCard inherits LineCard {
+    in property <EthTxView> tx;
+
+    card-color: CardColor.dark-grey;
+    width: 448px;
+    height: 388px;
+
+    VerticalLayout {
+        alignment: start;
+        spacing: Size.sz2;
+        padding: Size.sz4;
+
+        TextMd {
+            text: TR2.lookup(TrId.SignTxDataHashTitle);
+            color: Palette.white;
+        }
+
+        TextSm {
+            text: tx.data-digest;
+            color: Palette.white.transparentize(0.2);
+            wrap: char-wrap;
+        }
+
+        HorizontalLayout {
+            alignment: center;
+
+            QrCodeCard {
+                data: tx.data-digest;
+                width: 200px;
+                height: 200px;
+            }
+        }
+    }
+}
+
+component SignPage inherits VerticalLayout {
+    property <bool> signing: SignTx.state == SignTxState.Signing;
+    property <EthTxView> tx: SignTx.pending-tx;
+
+    NavHeader {
+        title: TR2.lookup(TrId.SigningTransactionTitle);
+        left-icon: "chevron-left";
+
+        clicked => {
+            SignTx.done();
+        }
+    }
+
+    VerticalLayout {
+        alignment: space-between;
+        padding-left: Size.sz4;
+        padding-right: Size.sz4;
+        padding-bottom: Size.sz4;
+
+        ContentSection {
+            spacing: Size.sz2;
+
+            TextSm {
+                text: TR2.lookup(TrId.SigningTransactionSubheader);
+                color: Palette.content-tertiary;
+                horizontal-alignment: center;
+            }
+
+            if tx.has-data: HorizontalLayout {
+                alignment: center;
+                spacing: Size.sz2;
+
+                VerticalLayout {
+                    alignment: center;
+                    Icon {
+                        name: "alert";
+                        color: Palette.content-notice;
+                        size: Size.sz5;
+                    }
+                }
+
+                TextSm {
+                    text: TR2.lookup(TrId.SignTxDataWarning);
+                    color: Palette.content-notice;
+                    vertical-alignment: center;
+                    wrap: word-wrap;
+                    width: 380px;
+                }
+            }
+
+            // With calldata: swipe between the transaction card and the
+            // ERC-8213 data-hash card.
+            if tx.has-data: Pagination {
+                total-pages: 2;
+                height: 408px;
+                width: 448px;
+                page-spacing: Size.sz2_5;
+                dots-padding-top: Size.sz2;
+
+                VerticalLayout {
+                    width: 448px;
+                    TxInfoCard {
+                        tx: tx;
+                    }
+                }
+
+                VerticalLayout {
+                    width: 448px;
+                    DataHashCard {
+                        tx: tx;
+                    }
+                }
+            }
+
+            if !tx.has-data: TxInfoCard {
+                tx: tx;
+            }
+        }
+
+        if !signing: ButtonSection {
+            Button {
+                icon: "";
+                label: TR2.lookup(TrId.CommonButtonCancel);
+                importance: tertiary;
+                clicked => {
+                    SignTx.done();
+                }
+            }
+
+            SlideToButton {
+                label: TR2.lookup(TrId.CommonSlideToSignSign);
+                info-label: TR2.lookup(TrId.CommonSlideToSignHelper);
+
+                activated(id) => {
+                    SignTx.sign-tx();
+                }
+            }
+        }
+
+        if signing: ButtonSection {
+            Button {
+                label: TR2.lookup(TrId.CommonSlideToSignSigning);
+                importance: tertiary;
+                loading: true;
+                enabled: false;
+            }
+        }
+    }
+}
+
+component VerifyingPage inherits JumboIconPageBody {
+    ContentSection {
+        HorizontalLayout {
+            alignment: center;
+            TimerCircularProgress {
+                indeterminate: true;
+            }
+        }
+
+        HeadingMd {
+            text: TR2.lookup(TrId.ValidatingTransactionTitle);
+            horizontal-alignment: center;
+        }
+    }
+}
+
+component SuccessPage inherits VerticalLayout {
+    NavHeader {
+        title: TR2.lookup(TrId.SigningTransactionSuccessQRTitle);
+        left-icon: "chevron-left";
+
+        clicked => {
+            SignTx.done();
+        }
+    }
+
+    PageBody {
+        ContentSection {
+            TextMd {
+                text: TR2.lookup(TrId.SigningTransactionSuccessQRSubheader);
+                color: Palette.content-tertiary;
+                horizontal-alignment: center;
+            }
+
+            HorizontalLayout {
+                alignment: center;
+
+                QrCodeCard {
+                    data: SignTx.signature-ur;
+                }
+            }
+        }
+
+        ButtonSection {
+            Button {
+                importance: primary;
+                icon: "";
+                label: TR2.lookup(TrId.CommonButtonDone);
+                clicked => {
+                    SignTx.done();
+                }
+            }
+        }
+    }
+}
+
+component ErrorPage inherits JumboIconPageBody {
+    ContentSection {
+        HorizontalLayout {
+            alignment: center;
+            WrappedIcon {
+                inner-icon: "close";
+            }
+        }
+
+        VerticalLayout {
+            spacing: Size.sz5;
+
+            HeadingMd {
+                text: TR2.lookup(TrId.InvalidQrHeader);
+                horizontal-alignment: center;
+            }
+
+            TextMd {
+                text: SignTx.error-message;
+                horizontal-alignment: center;
+                color: Palette.content-secondary;
+                wrap: word-wrap;
+            }
+        }
+    }
+
+    ButtonSection {
+        Button {
+            importance: Importance.primary;
+            label: TR2.lookup(TrId.CommonButtonDone);
+            clicked => {
+                SignTx.done();
+            }
+        }
+    }
+}
+
+export component SignTxPage inherits BasePage {
+    in property <SignTxProps> props;
+
+    property <SignTxState> state: SignTx.state;
+
+    if state == SignTxState.Verifying: VerifyingPage { }
+    if state == SignTxState.Sign || state == SignTxState.Signing: SignPage { }
+    if state == SignTxState.Success: SuccessPage { }
+    if state == SignTxState.Error || state == SignTxState.Idle: ErrorPage { }
+}

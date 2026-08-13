@@ -8,7 +8,7 @@ import {DarkPalette} from "../palettes/dark-palette.slint";
 import {LightPalette} from "../palettes/light-palette.slint";
 import {Button} from "./button.slint";
 import {TimerLoader} from "./loader.slint";
-import {CurrentTheme, Size, Palette, Images} from "../theme.slint";
+import {CurrentTheme, Size, Palette, Images, CompatImages} from "../theme.slint";
 
 export component SlideToButton inherits Rectangle {
     border-radius: Size.sz6;
@@ -39,7 +39,7 @@ export component SlideToButton inherits Rectangle {
     Image {
         width: 100%;
         height: 100%;
-        source: is-dark ? Images.nine-slice("images/slide-to-bg-dark") : Images.nine-slice("images/slide-to-bg-light");
+        source: is-dark ? CompatImages.nine-slice("images/slide-to-bg-dark") : CompatImages.nine-slice("images/slide-to-bg-light");
 
         // Center the activated-label in the image
         HorizontalLayout {
@@ -72,7 +72,7 @@ export component SlideToButton inherits Rectangle {
         x: parent.width - self.width - Size.sz1;
         width: thumb.width;
         height: inner-height;
-        source: is-dark ? Images.nine-slice("images/slide-to-target-dark") : Images.nine-slice("images/slide-to-target-light");
+        source: is-dark ? CompatImages.nine-slice("images/slide-to-target-dark") : CompatImages.nine-slice("images/slide-to-target-light");
         opacity: has-activated ? 0 : 1;
     }
 

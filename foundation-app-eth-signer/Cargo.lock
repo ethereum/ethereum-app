@@ -2351,6 +2351,7 @@ dependencies = [
  "sha2",
  "signer-core",
  "signer-decoding",
+ "signer-displaying",
  "signer-signing",
  "slint-keyos-platform",
  "slint-keyos-platform-build",
@@ -7092,6 +7093,16 @@ dependencies = [
  "alloy-primitives",
  "alloy-rlp",
  "ciborium",
+ "serde_json",
+ "signer-core",
+]
+
+[[package]]
+name = "signer-displaying"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "hex",
  "serde_json",
  "signer-core",
 ]

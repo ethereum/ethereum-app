@@ -15,6 +15,7 @@ mod eth_keys;
 mod import_seed;
 mod seed_source;
 mod settings;
+mod sign_tx;
 mod state;
 mod store;
 mod theme;
@@ -102,6 +103,7 @@ fn app_main(cx: AppContext, ui: AppWindow) {
     enter_passphrase::init(state);
     import_seed::init(state);
     settings::init(state);
+    sign_tx::init(state);
 
     state.borrow().refresh_slint_accounts();
 

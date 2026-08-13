@@ -37,6 +37,7 @@ file-backed = { path = ".foundation-sdk/current/lib/keyos/utils/file-backed" }
 signer-core = { path = "../common-eth-signer/crates/core" }
 signer-signing = { path = "../common-eth-signer/crates/signing" }
 signer-decoding = { path = "../common-eth-signer/crates/decoding" }
+signer-displaying = { path = "../common-eth-signer/crates/displaying" }
 # UR text encoding ("ur:crypto-hdkey/...") for the connect-wallet QR. Same
 # version the platform's QR helpers use.
 foundation-ur = "0.4"

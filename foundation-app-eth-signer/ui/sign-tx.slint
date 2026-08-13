@@ -1,0 +1,44 @@
+// SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: MIT
+
+import { Navigate } from "gen/navigate.slint";
+
+export enum SignTxState {
+    Idle,
+    Verifying,
+    Sign,
+    Signing,
+    Success,
+    Error,
+}
+
+// A decoded eth-sign-request transaction, pre-formatted by Rust.
+export struct EthTxView {
+    from: string,
+    to: string,
+    chain-id: string,
+    amount: string,
+    max-fees: string,
+    tx-type: string,
+    origin: string,
+    has-data: bool,
+    // ERC-8213 calldata digest (0x…), empty without data.
+    data-digest: string,
+}
+
+export global SignTx {
+    in property <SignTxState> state;
+    in property <EthTxView> pending-tx;
+    // Shown on the error page (invalid QR, unsupported type, wrong key, ...).
+    in property <string> error-message;
+    // Single-part "ur:eth-signature/..." shown as a QR after signing.
+    in property <string> signature-ur;
+
+    callback cancel-signing();
+    callback sign-tx();
+
+    public function done() {
+        self.cancel-signing();
+        Navigate.backward();
+    }
+}

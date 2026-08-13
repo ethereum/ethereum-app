@@ -98,6 +98,27 @@ impl KeyCache {
         DerivationPath { components }
     }
 
+    /// The signing key for a request's derivation path. Only paths under this
+    /// wallet's m/44'/60' prefix can be served from the cached coin xprv;
+    /// anything else is refused rather than silently mis-derived.
+    pub fn signing_key(&self, path: &DerivationPath) -> anyhow::Result<k256::ecdsa::SigningKey> {
+        let prefix_ok = path.components.len() >= COIN_PATH.len()
+            && COIN_PATH.iter().zip(&path.components).all(|(&(index, hardened), c)| {
+                c.index == index && c.hardened == hardened
+            });
+        if !prefix_ok {
+            anyhow::bail!("unsupported derivation path {path}: expected an m/44'/60' prefix");
+        }
+
+        let mut xprv = self.coin.clone();
+        for component in &path.components[COIN_PATH.len()..] {
+            let child = bip32::ChildNumber::new(component.index, component.hardened)
+                .context("child number")?;
+            xprv = xprv.derive_child(child).context("derive request path")?;
+        }
+        Ok(xprv.private_key().clone())
+    }
+
     fn address_at(&self, account: u32, i: u32) -> anyhow::Result<Address> {
         let mut xprv = self.coin.clone();
         for (index, hardened) in [(account, true), (0, false), (i, false)] {
@@ -156,6 +177,25 @@ mod tests {
     fn path_formatting() {
         assert_eq!(KeyCache::path_for(2, 3).to_string(), "m/44'/60'/2'/0/3");
         assert_eq!(KeyCache::account_origin(2).to_string(), "m/44'/60'/2'");
+    }
+
+    #[test]
+    fn signing_key_matches_canonical_pipeline() {
+        let entropy = [7u8; 32];
+        let cache = KeyCache::init(&entropy, "").unwrap();
+        let path = KeyCache::path_for(1, 3);
+        let fast = cache.signing_key(&path).unwrap();
+        let canonical = key_from_entropy(&entropy, &path).unwrap();
+        assert_eq!(fast.to_bytes(), canonical.to_bytes());
+
+        // A non-Ethereum path is refused.
+        let foreign = DerivationPath {
+            components: vec![
+                ChildNumber { index: 44, hardened: true },
+                ChildNumber { index: 0, hardened: true },
+            ],
+        };
+        assert!(cache.signing_key(&foreign).is_err());
     }
 
     #[test]

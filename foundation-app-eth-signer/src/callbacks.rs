@@ -29,15 +29,15 @@ pub fn init_callbacks(state: StoredValue<AppState>) {
 
     callbacks.on_scan_clicked({
         move || {
-            // Stub until Ethereum sign-request handling lands: open the
-            // scanner, log and discard whatever comes back.
+            // Expect an ERC-4527 eth-sign-request UR; anything else lands on
+            // the sign page's error state.
             let opts = ScanQrOptions {
                 header_title: tr::lookup_id(TrId::ScanTitle).into(),
                 header_right_icon: String::from("close"),
                 ..ScanQrOptions::default()
             };
             match open_qr_scanner::<GuiPermissions>(opts) {
-                Ok(Some(scan)) => log::info!("scan result ignored (not implemented yet): {scan:?}"),
+                Ok(Some(scan)) => crate::sign_tx::handle_scan(state, scan),
                 Ok(None) => log::info!("nothing returned from qr scanner"),
                 Err(e) => log::error!("error while scanning QR: {e:?}"),
             }

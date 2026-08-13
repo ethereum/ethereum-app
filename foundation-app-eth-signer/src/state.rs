@@ -40,6 +40,9 @@ pub struct AppState {
     /// Draft of the recovery-phrase import flow.
     pub import_words: Vec<String>,
     pub import_word_count: usize,
+
+    /// A decoded eth-sign-request awaiting the user's slide-to-sign.
+    pub pending_sign_tx: Option<crate::sign_tx::PendingSignTx>,
 }
 
 impl AppState {
@@ -55,6 +58,7 @@ impl AppState {
             archive_mode: false,
             import_words: Vec::new(),
             import_word_count: 12,
+            pending_sign_tx: None,
         }
     }
 
