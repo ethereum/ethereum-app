@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2025 Foundation Devices, Inc. <hello@foundation.xyz>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { AccountCard, BasePage, Icon, IconButton, NavHeader, OverlayMenu, PopupMenuItem, Shadow, Shield, TextSm, SegmentedControl } from "../compat/widgets.slint";
+import { AccountCard, BasePage, Button, Checkbox, Icon, IconButton, Modal, NavHeader, OverlayMenu, PopupMenuItem, Shadow, Shield, TextSm, SegmentedControl } from "../compat/widgets.slint";
 import { Importance, CurrentTheme, UISize, Palette, Size, CardColor } from "../compat/theme.slint";
 import { TR2, TrId } from "../gen/tr.slint";
 
@@ -9,6 +9,7 @@ import { AccountView, Callbacks } from "../callbacks.slint";
 import { Navigate } from "../gen/navigate.slint";
 import { VerifyAddress } from "../verify-address.slint";
 import { EnterPassphrase } from "../enter-passphrase.slint";
+import { Settings } from "../settings.slint";
 
 component ActionItem inherits VerticalLayout {
     in property <string> icon;
@@ -159,6 +160,7 @@ component AccountViewCard inherits AccountCollapsible {
 
 component AccountsPage inherits BasePage {
     property <bool> menu-open: false;
+    property <bool> passphrase-modal-open: false;
     property <string> selected: "";
     property <bool> has-passphrase: EnterPassphrase.passphrase != "";
 
@@ -254,9 +256,19 @@ component AccountsPage inherits BasePage {
         PopupMenuItem {
             label: has-passphrase ? TR2.lookup(TrId.AccountsMenuClearPassphrase) : TR2.lookup(TrId.AccountsMenuApplyPassphrase);
             icon: has-passphrase ? "shield-x" : "shield-plus";
+            // Passphrases only apply to an imported recovery phrase, not the
+            // device app seed.
+            enabled: Settings.passphrase-available;
             clicked => {
-                menu-open = false;
-                Navigate.enter-passphrase({ });
+                if (Settings.passphrase-available) {
+                    menu-open = false;
+
+                    if (!Settings.show-passphrase-warning || has-passphrase) {
+                        Navigate.enter-passphrase({ });
+                    } else {
+                        passphrase-modal-open = true;
+                    }
+                }
             }
         }
 
@@ -281,6 +293,65 @@ component AccountsPage inherits BasePage {
 
         touched-off => {
             menu-open = false;
+        }
+    }
+
+    if passphrase-modal-open: Modal {
+        icon: "info";
+        icon-color: Palette.content-brand;
+        title: TR2.lookup(TrId.PassphraseModalHeader);
+        text: TR2.lookup(TrId.PassphraseModalContent);
+        button-spacing: Size.sz2;
+
+        // Slightly shorter than the typical row height to keep this checkbox row visually distinct from the Confirm button below.
+        Rectangle {
+            height: Size.sz15 - 2px;
+
+            VerticalLayout {
+                alignment: center;
+
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: Size.sz4;
+
+                    Checkbox {
+                        checked: !Settings.show-passphrase-warning;
+                    }
+
+                    TextSm {
+                        text: TR2.lookup(TrId.CommonButtonDontShowAgain);
+                        color: Palette.content-secondary;
+                    }
+                }
+            }
+
+            TouchArea {
+                clicked => {
+                    Settings.set-show-passphrase-warning(!Settings.show-passphrase-warning);
+                }
+            }
+        }
+
+        // Outer Rectangle + sibling TouchArea give the Confirm button a 10 px hit-area extension above and below.
+        Rectangle {
+            height: Size.sz15 + 20px;
+
+            VerticalLayout {
+                alignment: center;
+
+                Button {
+                    label: TR2.lookup(TrId.CommonButtonConfirm);
+                    importance: Importance.primary;
+                    force-pressed: confirm-touch.pressed;
+                }
+            }
+
+            confirm-touch := TouchArea {
+                clicked => {
+                    passphrase-modal-open = false;
+                    Navigate.enter-passphrase({ });
+                }
+            }
         }
     }
 }

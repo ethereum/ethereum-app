@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 //! Ethereum Signer — account management UI ported from the Passport Prime
-//! Bitcoin app. Keys are rooted in the per-app seed (`GetAppSeed`); addresses
-//! derive as m/44'/60'/0'/0/i via common-eth-signer's signer-signing crate.
+//! Bitcoin app. Keys are rooted in the configured seed source (device app
+//! seed or an imported recovery phrase); addresses derive as
+//! m/44'/60'/j'/0/i via common-eth-signer's signer-signing crate.
 
 mod account_id;
 mod callbacks;
@@ -11,6 +12,9 @@ mod connect_account;
 mod create_account;
 mod enter_passphrase;
 mod eth_keys;
+mod import_seed;
+mod seed_source;
+mod settings;
 mod state;
 mod store;
 mod theme;
@@ -18,8 +22,7 @@ mod verify_address;
 
 use {
     crate::state::AppState,
-    slint_keyos_platform::{app_ui2, slint::ComponentHandle, spawn_local, spawn_worker, StoredValue},
-    std::sync::Arc,
+    slint_keyos_platform::{app_ui2, slint::ComponentHandle, StoredValue},
 };
 
 //app_ui2!("Ethereum Signer");
@@ -48,6 +51,11 @@ fn app_main(cx: AppContext, ui: AppWindow) {
         let fs = cx.fs.clone();
         let cache = Default::default();
         ui.global::<Images>().on_icon(move |name, _size| {
+            // Legacy widgets bind Icon sources unconditionally, so an unset
+            // icon comes through as "" — that's a blank, not a missing asset.
+            if name.is_empty() {
+                return Default::default();
+            }
             slint_keyos_platform::raw_image::load_raw_image(
                 &fs,
                 &cache,
@@ -80,46 +88,20 @@ fn app_main(cx: AppContext, ui: AppWindow) {
         });
     }
 
-    // TODO(sim): GetAppSeed hangs the simulator — using a fixed dev seed until
-    // that's debugged separately. To restore, replace DEV_APP_SEED with:
-    //
-    //     let app_seed = Security::default().app_seed().expect("app seed unavailable");
-    //     ... KeyCache::init(app_seed.as_bytes()) ...
-    //
-    // GOTCHA when restoring: the first GetAppSeed call must happen on the main
-    // thread, before any background worker needs it — the grantOnFirstUse
-    // consent prompt is presented against this app's gui connection and is
-    // dropped (=> denied, app aborts) when the call comes from a detached
-    // worker at launch.
-    //const DEV_APP_SEED: [u8; 32] = [0x42; 32];
-    let app_seed = Security::default().app_seed().expect("app seed unavailable");
-
     let state = StoredValue::new(AppState::new(ui.as_weak()));
 
-    // The BIP-39 PBKDF2 expansion and hardened chain to the coin level are too
-    // slow for the UI thread; run once on a worker and publish the cache.
-    spawn_local(async move {
-        let result = spawn_worker(async move {
-            //eth_keys::KeyCache::init(&DEV_APP_SEED)
-	      eth_keys::KeyCache::init(app_seed.as_bytes())
-        })
-        .await;
-        match result {
-            Ok(cache) => {
-                state.borrow_mut().keys = Some(Arc::new(cache));
-                // Refresh so account views pick up the master fingerprint.
-                state.borrow().refresh_slint_accounts();
-            }
-            Err(e) => log::error!("key derivation failed: {e:?}"),
-        }
-    })
-    .detach();
+    // Derive the default wallet's keys from the configured seed source
+    // (device app seed — see seed_source::app_seed for the temporary dev
+    // constant — or the sealed imported phrase). PBKDF2 runs on a worker.
+    AppState::rebuild_default_keys(state);
 
     callbacks::init_callbacks(state);
     connect_account::init(state);
     create_account::init(state);
     verify_address::init(state);
     enter_passphrase::init(state);
+    import_seed::init(state);
+    settings::init(state);
 
     state.borrow().refresh_slint_accounts();
 

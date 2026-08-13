@@ -31,7 +31,7 @@ fn export_account_ur(state: StoredValue<AppState>, id: &str) -> anyhow::Result<S
     let account_id = id.parse::<AccountId>()?;
 
     let state = state.borrow();
-    let keys = state.keys.as_ref().ok_or_else(|| anyhow::anyhow!("keys not initialized yet"))?;
+    let keys = state.keys().ok_or_else(|| anyhow::anyhow!("keys not initialized yet"))?;
     let config = state
         .store
         .get(&account_id)

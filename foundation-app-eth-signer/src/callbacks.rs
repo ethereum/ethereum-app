@@ -113,7 +113,7 @@ impl slint_keyos_platform::slint::Model for AddressModel {
         // derivation per row off the cached account xprv — cheap enough for
         // the UI thread.
         let state = self.state.borrow();
-        let keys = state.keys.as_ref()?;
+        let keys = state.keys()?;
         let start = cache.len() as u32;
         let end = (row + 1).max(cache.len() + WINDOW_SIZE).min(MAX_ADDRESS_COUNT) as u32;
         for i in start..end {

@@ -1,0 +1,169 @@
+// SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: MIT
+
+// One word at a time, from my-coin's import flow. See my-coin's page for the
+// layout rationale (keyboard avoidance: everything pins vertical-stretch 0,
+// only the pill list grows).
+//
+// Committing a complete, checksum-valid phrase switches the seed source,
+// deletes all accounts and returns home. Backing out changes nothing.
+
+import { Theme, ControlSize, ButtonVariant } from "@ui/theme.slint";
+import { Input } from "@ui/input.slint";
+import { Chip, ChipVariant, ChipColor, ChipSize } from "@ui/chip.slint";
+import { ProgressBar, ProgressValueFormat } from "@ui/progress_bar.slint";
+import { SegmentedControl } from "@ui/segmented_control.slint";
+import { Button } from "@ui/button.slint";
+import { TR2, TrId } from "../../gen/tr.slint";
+import { Navigate } from "../../gen/navigate.slint";
+import { ImportSeed } from "../../import-seed.slint";
+import { ImportSeedProps } from "./props.slint";
+import { PageShell, ImportScrollBody, WordPill } from "../../widgets/import-widgets.slint";
+
+export component ImportSeedPage inherits Rectangle {
+    in property <ImportSeedProps> props;
+
+    property <string> draft;
+    property <[string]> candidates: ImportSeed.suggestions(root.draft);
+    // Red only when the prefix cannot become any wordlist word.
+    property <bool> draft-is-dead-end: root.draft != "" && root.candidates.length == 0;
+    property <int> column-height: Math.ceil(ImportSeed.words.length / 2);
+    property <bool> complete: ImportSeed.entered == ImportSeed.word-count;
+
+    background: Theme.palette-background;
+
+    function accept(word: string) {
+        ImportSeed.push-word(word);
+        root.draft = "";
+    }
+
+    PageShell {
+        width: 100%;
+        height: 100%;
+        title: TR2.lookup(TrId.ImportSeedTitle);
+        show-back: true;
+        back => {
+            Navigate.backward();
+        }
+
+        if ImportSeed.entered == 0: SegmentedControl {
+            width: 100%;
+            vertical-stretch: 0;
+            options: ["12 words", "24 words"];
+            show-panel: false;
+            changed(index, text) => {
+                ImportSeed.begin-import(index == 0 ? 12 : 24);
+                root.draft = "";
+            }
+        }
+
+        ProgressBar {
+            width: 100%;
+            vertical-stretch: 0;
+            min-value: 0;
+            max-value: ImportSeed.word-count;
+            value: ImportSeed.entered;
+            label: "Word " + (Math.min(ImportSeed.entered, ImportSeed.word-count - 1) + 1);
+            value-format: ProgressValueFormat.value;
+            value-label: ImportSeed.entered + " / " + ImportSeed.word-count;
+        }
+
+        if !complete: word-field := Input {
+            width: 100%;
+            vertical-stretch: 0;
+            size: ControlSize.lg;
+            value <=> root.draft;
+            placeholder: "Word " + (ImportSeed.entered + 1);
+            clearable: true;
+            border-color: root.draft-is-dead-end ? Theme.palette-danger : Theme.palette-border;
+            // The keyboard's accept key. Only advances on a complete word.
+            submitted(text) => {
+                if (ImportSeed.is-word(text)) {
+                    root.accept(text);
+                }
+            }
+        }
+
+        // Tap-to-complete: a 3-4 letter prefix usually narrows to a handful.
+        if !complete: HorizontalLayout {
+            spacing: Theme.spacing-sm;
+            alignment: start;
+            vertical-stretch: 0;
+
+            for candidate in root.candidates: Chip {
+                text: candidate;
+                variant: ChipVariant.outlined;
+                color: ChipColor.primary;
+                size: ChipSize.md;
+                clicked => {
+                    root.accept(candidate);
+                }
+            }
+        }
+
+        if ImportSeed.error != "": Text {
+            vertical-stretch: 0;
+            text: ImportSeed.error;
+            color: Theme.palette-danger;
+            font-family: Theme.font-primary;
+            font-size: Theme.font-size-label;
+            wrap: word-wrap;
+        }
+
+        if complete: Button {
+            width: 100%;
+            vertical-stretch: 0;
+            text: TR2.lookup(TrId.CommonButtonContinue);
+            variant: ButtonVariant.primary;
+            size: ControlSize.md;
+            full-width: true;
+            clicked => {
+                if (ImportSeed.commit-import()) {
+                    Navigate.return-home();
+                }
+            }
+        }
+
+        if ImportSeed.entered > 0: Button {
+            width: 100%;
+            vertical-stretch: 0;
+            text: "Delete last word";
+            variant: ButtonVariant.secondary;
+            size: ControlSize.md;
+            full-width: true;
+            clicked => {
+                ImportSeed.pop-word();
+                root.draft = "";
+            }
+        }
+
+        // The only child that grows.
+        ImportScrollBody {
+            vertical-stretch: 1;
+
+            for row in root.column-height: HorizontalLayout {
+                spacing: Theme.spacing-sm;
+
+                WordPill {
+                    horizontal-stretch: 1;
+                    index: row + 1;
+                    word: row < ImportSeed.words.length ? ImportSeed.words[row] : "";
+                }
+
+                WordPill {
+                    horizontal-stretch: 1;
+                    visible: row + root.column-height < ImportSeed.words.length;
+                    index: row + root.column-height + 1;
+                    word: row + root.column-height < ImportSeed.words.length
+                        ? ImportSeed.words[row + root.column-height]
+                        : "";
+                }
+            }
+        }
+    }
+
+    init => {
+        // Fresh entry on each visit; a previous abandoned draft is discarded.
+        ImportSeed.begin-import(12);
+    }
+}

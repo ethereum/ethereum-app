@@ -11,10 +11,12 @@ import { VerifyAddress } from "verify-address.slint";
 import { CreateAccount } from "create-account.slint";
 import { ConnectAccount } from "connect-account.slint";
 import { EnterPassphrase } from "enter-passphrase.slint";
+import { Settings, SeedSourceKind } from "settings.slint";
+import { ImportSeed } from "import-seed.slint";
 
 // GradientDirection/GradientStop/Palettes are needed on the Rust side (the
 // Utils binder macro and theme.rs refer to them as crate:: types).
-export { Theme, Images, CompatImages, Utils, CurrentTheme, Palettes, GradientDirection, GradientStop, Callbacks, VerifyAddress, CreateAccount, ConnectAccount, EnterPassphrase }
+export { Theme, Images, CompatImages, Utils, CurrentTheme, Palettes, GradientDirection, GradientStop, Callbacks, VerifyAddress, CreateAccount, ConnectAccount, EnterPassphrase, Settings, SeedSourceKind, ImportSeed }
 export { TR }
 export * from "gen/exports.slint";
 

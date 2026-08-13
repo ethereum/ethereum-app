@@ -148,7 +148,7 @@ async fn verify_address(
         return Ok(());
     };
 
-    let Some(keys) = state.borrow().keys.clone() else {
+    let Some(keys) = state.borrow().keys() else {
         log::error!("keys not initialized yet");
         global.set_state(VerifyAddressState::Invalid);
         return Ok(());

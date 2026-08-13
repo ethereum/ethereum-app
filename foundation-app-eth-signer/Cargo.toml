@@ -40,6 +40,12 @@ signer-decoding = { path = "../common-eth-signer/crates/decoding" }
 # UR text encoding ("ur:crypto-hdkey/...") for the connect-wallet QR. Same
 # version the platform's QR helpers use.
 foundation-ur = "0.4"
+
+# Sealing the imported recovery phrase at rest under a key derived from the
+# app seed (my-coin's seed-store pattern).
+chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc"] }
+hmac = "0.12"
+sha2 = "0.10"
 # Same majors as signer-signing so SigningKey/Address types unify.
 k256 = { version = "0.13", features = ["ecdsa"] }
 bip39 = "2"

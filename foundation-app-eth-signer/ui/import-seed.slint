@@ -1,0 +1,34 @@
+// SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: MIT
+
+// Recovery-phrase import (my-coin's word-entry flow). The word list lives in
+// Rust — Slint arrays are not reactively tracked on element mutation.
+export global ImportSeed {
+    // ===== published by Rust =====
+    in property <[string]> words;
+    in property <int> word-count: 12;
+    in property <int> entered;
+    in property <string> error;
+
+    // ===== callbacks =====
+
+    // Start a fresh 12- or 24-word entry (also used to reset on page entry).
+    callback begin-import(int);
+
+    // Is this a complete word from the BIP39 English wordlist?
+    pure callback is-word(string) -> bool;
+
+    // Wordlist words sharing this prefix, capped for display.
+    pure callback suggestions(string) -> [string];
+
+    // Accept a word and advance. Updates words / entered.
+    callback push-word(string);
+
+    // Remove the last accepted word.
+    callback pop-word();
+
+    // Verify the checksum, seal + persist the phrase as the new seed source,
+    // delete all accounts and rebuild the keys. Returns false (and sets
+    // `error`) when the phrase does not check out.
+    callback commit-import() -> bool;
+}

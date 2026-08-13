@@ -1,0 +1,23 @@
+// SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: MIT
+
+export enum SeedSourceKind {
+    Device,
+    UserMnemonic,
+}
+
+export global Settings {
+    // Where the wallet's keys come from. Set by Rust at startup and after a
+    // switch; the settings page never mutates it directly.
+    in property <SeedSourceKind> seed-source: SeedSourceKind.Device;
+
+    // Switch the source back to the device app seed: deletes all accounts,
+    // forgets the imported phrase and rebuilds the keys.
+    callback switch-to-device();
+
+    // The passphrase feature is only available with an imported phrase.
+    out property <bool> passphrase-available: seed-source == SeedSourceKind.UserMnemonic;
+
+    in-out property <bool> show-passphrase-warning: true;
+    callback set-show-passphrase-warning(show: bool);
+}

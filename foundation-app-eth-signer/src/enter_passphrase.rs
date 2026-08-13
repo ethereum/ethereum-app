@@ -1,44 +1,100 @@
 // SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
 // SPDX-License-Identifier: MIT
 
-//! Passphrase flow stub. The page and its global are kept compiling and
-//! reachable; the logic will later be wired using the key-source approach
-//! from the my-coin example (device app-seed vs imported phrase).
+//! Passphrase flow (Bitcoin-app parity). Only available when the seed source
+//! is an imported recovery phrase; the home-menu entry is disabled otherwise.
+//!
+//! `try` previews the fingerprint of the passphrase wallet, `confirm` switches
+//! to it (optionally creating its first account), the Default/Passphrase
+//! segmented control switches views using the cached keys.
 
 use {
-    crate::{state::AppState, EnterPassphrase},
-    slint_keyos_platform::{slint::ComponentHandle, StoredValue},
+    crate::{state::AppState, EnterPassphrase, EnterPassphraseState, Navigate},
+    slint_keyos_platform::{slint::ComponentHandle, spawn_local, StoredValue},
 };
 
 pub fn init(state: StoredValue<AppState>) {
     let ui = state.borrow().ui();
     let global = ui.global::<EnterPassphrase>();
 
-    global.on_try(move |_passphrase| {
-        log::info!("passphrase try: not implemented yet");
-        let ui = state.borrow().ui();
-        let global = ui.global::<EnterPassphrase>();
-        global.set_fingerprint_loading(false);
-        global.set_fingerprint("".into());
+    global.on_try(move |passphrase| {
+        try_passphrase(state, passphrase.into());
     });
 
-    global.on_confirm(move |_passphrase| {
-        log::info!("passphrase confirm: not implemented yet");
+    global.on_confirm(move |passphrase| confirm_passphrase(state, passphrase.into()));
+
+    global.on_clear_passphrase(move || AppState::apply_passphrase(state, String::new()));
+
+    global.on_reapply(move |passphrase| AppState::apply_passphrase(state, passphrase.into()));
+
+    global.on_switch_view(move |index| {
+        let passphrase: String = {
+            if index == 0 {
+                String::new()
+            } else {
+                let app_state = state.borrow();
+                let ui = app_state.ui();
+                ui.global::<EnterPassphrase>().get_passphrase().into()
+            }
+        };
+        AppState::switch_view_locally(state, passphrase);
     });
 
-    global.on_clear_passphrase(move || {
-        log::info!("passphrase clear: not implemented yet");
+    global.on_create_initial_account(move |label| {
+        let passphrase: String =
+            state.borrow().ui().global::<EnterPassphrase>().get_passphrase().into();
+        {
+            let s = state.borrow();
+            let ui = s.ui();
+            ui.global::<EnterPassphrase>().set_state(EnterPassphraseState::Clear);
+            ui.global::<Navigate>().invoke_backward();
+        }
+        spawn_local(async move {
+            create_initial_account(state, label.into(), passphrase).await;
+        })
+        .detach();
     });
+}
 
-    global.on_create_initial_account(move |_passphrase| {
-        log::info!("passphrase create-initial-account: not implemented yet");
-    });
+fn try_passphrase(state: StoredValue<AppState>, passphrase: String) {
+    state.borrow().ui().global::<EnterPassphrase>().set_fingerprint_loading(true);
+    spawn_local(async move {
+        // Derives + caches the passphrase wallet and publishes the
+        // fingerprint / no-accounts preview. The view is not switched yet.
+        AppState::derive_passphrase_keys(state, passphrase)
+            .await
+            .inspect_err(|e| log::error!("failed to compute passphrase fingerprint: {e:?}"))
+            .ok();
+        state.borrow().ui().global::<EnterPassphrase>().set_fingerprint_loading(false);
+    })
+    .detach();
+}
 
-    global.on_reapply(move |_passphrase| {
-        log::info!("passphrase reapply: not implemented yet");
-    });
+fn confirm_passphrase(state: StoredValue<AppState>, passphrase: String) {
+    AppState::apply_passphrase(state, passphrase);
+    let app_state = state.borrow();
+    let ui = app_state.ui();
+    ui.global::<EnterPassphrase>().set_state(EnterPassphraseState::Clear);
+    ui.global::<Navigate>().invoke_backward();
+}
 
-    global.on_switch_view(move |_index| {
-        log::info!("passphrase switch-view: not implemented yet");
-    });
+async fn create_initial_account(state: StoredValue<AppState>, label: String, passphrase: String) {
+    let keys = match AppState::derive_passphrase_keys(state, passphrase).await {
+        Ok(keys) => keys,
+        Err(e) => {
+            log::error!("failed to derive passphrase keys: {e:?}");
+            return;
+        }
+    };
+
+    {
+        let mut s = state.borrow_mut();
+        s.use_passphrase = true;
+        let fingerprint = keys.master_fingerprint().to_string();
+        s.store
+            .create(&label, &fingerprint)
+            .inspect_err(|e| log::error!("failed to create initial passphrase account: {e:?}"))
+            .ok();
+        s.refresh_slint_accounts();
+    }
 }

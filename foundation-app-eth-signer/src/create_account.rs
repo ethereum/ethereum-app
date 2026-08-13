@@ -22,7 +22,8 @@ pub fn init(state: StoredValue<AppState>) {
 
             global.set_state(CreateAccountState::Creating);
 
-            let result = state.borrow_mut().store.create(&options.label);
+            let fingerprint = state.borrow().current_fingerprint();
+            let result = state.borrow_mut().store.create(&options.label, &fingerprint);
             match result {
                 Ok(account_id) => {
                     global.set_state(CreateAccountState::Success);
@@ -38,7 +39,11 @@ pub fn init(state: StoredValue<AppState>) {
     });
 
     global.on_validate_new_label({
-        move |label| state.borrow().store.validate_label(&label).unwrap_or_default().into()
+        move |label| {
+            let s = state.borrow();
+            let fingerprint = s.current_fingerprint();
+            s.store.validate_label(&label, &fingerprint).unwrap_or_default().into()
+        }
     });
 
     global.on_update_account_name({

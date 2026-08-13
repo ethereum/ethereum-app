@@ -1,0 +1,118 @@
+// SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: MIT
+
+// Widgets for the recovery-phrase import page, taken from my-coin. They build
+// on the ui2 component set (@ui), unlike the rest of the app which uses the
+// vendored legacy widgets in ../compat — both share the applied theme.
+
+import { Theme, UISize, Images } from "@ui/theme.slint";
+import { IconButton, IconButtonVariant, IconButtonSize } from "@ui/icon_button.slint";
+
+// Title bar + page padding. Children are laid out vertically beneath the title.
+export component PageShell inherits Rectangle {
+    in property <string> title;
+    in property <bool> show-back: false;
+    callback back();
+
+    background: Theme.palette-background;
+
+    VerticalLayout {
+        padding-left: Theme.spacing-xl;
+        padding-right: Theme.spacing-xl;
+        padding-top: Theme.spacing-md + UISize.control-center-status-bar-height;
+        padding-bottom: Theme.spacing-xl;
+        spacing: Theme.spacing-lg;
+
+        HorizontalLayout {
+            spacing: Theme.spacing-sm;
+            alignment: start;
+            vertical-stretch: 0;
+
+            if root.show-back: IconButton {
+                icon: Images.icon("chevron-left", Theme.icon-size-md);
+                variant: IconButtonVariant.ghost;
+                size: IconButtonSize.sm;
+                clicked => {
+                    root.back();
+                }
+            }
+
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+
+                Text {
+                    text: root.title;
+                    color: Theme.palette-foreground;
+                    font-family: Theme.font-primary;
+                    font-size: Theme.font-size-title;
+                    font-weight: Theme.font-weight-bold;
+                    overflow: elide;
+                }
+            }
+        }
+
+        @children
+    }
+}
+
+// A Flickable placed straight into a layout takes its expands-to-parent default
+// size and can draw over its siblings, so it needs a clipping Rectangle around
+// it that the layout can size.
+export component ImportScrollBody inherits Rectangle {
+    clip: true;
+
+    Flickable {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        viewport-height: content.preferred-height;
+
+        content := VerticalLayout {
+            width: root.width;
+            spacing: Theme.spacing-md;
+
+            @children
+        }
+    }
+}
+
+// One numbered word of a recovery phrase, as a read-only pill.
+export component WordPill inherits Rectangle {
+    in property <int> index;
+    in property <string> word;
+
+    height: 40px;
+    background: Theme.palette-surface;
+    border-color: Theme.palette-border;
+    border-width: 1px;
+    border-radius: self.height / 2;
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-sm;
+        alignment: start;
+
+        Text {
+            vertical-alignment: center;
+            text: root.index + ".";
+            color: Theme.palette-muted;
+            font-family: Theme.font-primary;
+            font-size: Theme.font-size-label;
+            width: 22px;
+            horizontal-alignment: right;
+        }
+
+        Text {
+            vertical-alignment: center;
+            text: root.word;
+            color: Theme.palette-foreground;
+            font-family: Theme.font-primary;
+            font-size: Theme.font-size-subtitle;
+            font-weight: Theme.font-weight-medium;
+            overflow: elide;
+        }
+    }
+}

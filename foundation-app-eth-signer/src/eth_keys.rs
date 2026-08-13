@@ -33,11 +33,11 @@ pub struct KeyCache {
 }
 
 impl KeyCache {
-    /// Derive the cache from raw BIP-39 entropy (the 32-byte app seed on
-    /// device; tests may pass 16 bytes).
-    pub fn init(entropy: &[u8]) -> anyhow::Result<Self> {
+    /// Derive the cache from raw BIP-39 entropy plus an optional BIP-39
+    /// passphrase (empty string for the default wallet).
+    pub fn init(entropy: &[u8], passphrase: &str) -> anyhow::Result<Self> {
         let mnemonic = Mnemonic::from_entropy(entropy).context("invalid entropy")?;
-        let seed = mnemonic.to_seed("");
+        let seed = mnemonic.to_seed(passphrase);
 
         let master = XPrv::new(seed).context("bip32 master")?;
         let master_fingerprint = hex::encode(master.public_key().fingerprint());
@@ -121,7 +121,7 @@ mod tests {
     #[test]
     fn fast_path_matches_canonical_pipeline() {
         let entropy = [7u8; 32];
-        let cache = KeyCache::init(&entropy).unwrap();
+        let cache = KeyCache::init(&entropy, "").unwrap();
         for (account, i) in [(0u32, 0u32), (0, 1), (1, 3), (5, 100)] {
             let canonical =
                 address_of(&key_from_entropy(&entropy, &KeyCache::path_for(account, i)).unwrap());
@@ -133,14 +133,23 @@ mod tests {
     fn known_vector() {
         // 16 zero bytes -> "abandon ... about"; m/44'/60'/0'/0/0 is the
         // standard test vector address.
-        let cache = KeyCache::init(&[0u8; 16]).unwrap();
+        let cache = KeyCache::init(&[0u8; 16], "").unwrap();
         assert_eq!(cache.address(0, 0).unwrap(), "0x9858EfFD232B4033E47d90003D41EC34EcaEda94");
     }
 
     #[test]
     fn accounts_differ() {
-        let cache = KeyCache::init(&[7u8; 32]).unwrap();
+        let cache = KeyCache::init(&[7u8; 32], "").unwrap();
         assert_ne!(cache.address(0, 0).unwrap(), cache.address(1, 0).unwrap());
+    }
+
+    #[test]
+    fn passphrase_changes_the_wallet() {
+        let entropy = [7u8; 32];
+        let default = KeyCache::init(&entropy, "").unwrap();
+        let passphrased = KeyCache::init(&entropy, "hunter2").unwrap();
+        assert_ne!(default.master_fingerprint(), passphrased.master_fingerprint());
+        assert_ne!(default.address(0, 0).unwrap(), passphrased.address(0, 0).unwrap());
     }
 
     #[test]
@@ -152,7 +161,7 @@ mod tests {
     #[test]
     fn hdkey_matches_canonical_account_key() {
         let entropy = [7u8; 32];
-        let cache = KeyCache::init(&entropy).unwrap();
+        let cache = KeyCache::init(&entropy, "").unwrap();
         for account in [0u32, 1] {
             let (key_data, chain_code) = cache.account_hdkey(account).unwrap();
             let canonical =

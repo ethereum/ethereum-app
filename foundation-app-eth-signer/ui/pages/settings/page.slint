@@ -3,14 +3,56 @@
 
 import { TR2, TrId } from "../../gen/tr.slint";
 import { Palette, Size } from "../../compat/theme.slint";
-import { BasePage, PageBody, NavHeader, TextSm } from "../../compat/widgets.slint";
+import { BasePage, PageBody, NavHeader, TextSm, MenuSection, MenuSectionLayout, HLine, RadioButton, ConfirmationModal } from "../../compat/widgets.slint";
 
 import { SettingsProps } from "props.slint";
+import { Settings, SeedSourceKind } from "../../settings.slint";
 import { Navigate } from "../../gen/navigate.slint";
 
-// Settings shell: kept as a placeholder for future Ethereum-specific settings.
+component SeedSourceRow inherits Rectangle {
+    in property <string> text;
+    in property <bool> checked;
+
+    callback clicked();
+
+    height: Size.sz14;
+
+    HorizontalLayout {
+        padding-left: Size.sz4;
+        padding-right: Size.sz4;
+        alignment: start;
+        spacing: Size.sz4;
+
+        VerticalLayout {
+            alignment: center;
+            RadioButton {
+                checked: root.checked;
+                clicked => {
+                    root.clicked();
+                }
+            }
+        }
+
+        TextSm {
+            text: root.text;
+            vertical-alignment: center;
+        }
+    }
+
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
 export component SettingsPage inherits BasePage {
     in property <SettingsProps> props;
+
+    // Which source the pending confirmation modal would switch to.
+    property <bool> confirm-modal-open: false;
+    property <SeedSourceKind> confirm-target;
+    property <bool> leaving-mnemonic: Settings.seed-source == SeedSourceKind.UserMnemonic;
 
     VerticalLayout {
         NavHeader {
@@ -22,14 +64,63 @@ export component SettingsPage inherits BasePage {
 
         PageBody {
             VerticalLayout {
-                alignment: center;
-                padding: Size.sz6;
+                alignment: start;
+                padding: Size.sz4;
 
-                TextSm {
-                    text: "No settings yet";
-                    color: Palette.content-secondary;
-                    horizontal-alignment: center;
+                MenuSection {
+                    title: TR2.lookup(TrId.SettingsSeedSourceTitle);
+                    MenuSectionLayout {
+                        SeedSourceRow {
+                            text: TR2.lookup(TrId.SettingsSeedSourceDevice);
+                            checked: Settings.seed-source == SeedSourceKind.Device;
+                            clicked => {
+                                if (Settings.seed-source != SeedSourceKind.Device) {
+                                    confirm-target = SeedSourceKind.Device;
+                                    confirm-modal-open = true;
+                                }
+                            }
+                        }
+
+                        HLine { }
+
+                        SeedSourceRow {
+                            text: TR2.lookup(TrId.SettingsSeedSourceMnemonic);
+                            checked: Settings.seed-source == SeedSourceKind.UserMnemonic;
+                            clicked => {
+                                if (Settings.seed-source != SeedSourceKind.UserMnemonic) {
+                                    confirm-target = SeedSourceKind.UserMnemonic;
+                                    confirm-modal-open = true;
+                                }
+                            }
+                        }
+                    }
                 }
+            }
+        }
+    }
+
+    if confirm-modal-open: ConfirmationModal {
+        icon: "alert";
+        icon-color: Palette.content-notice;
+        title: TR2.lookup(TrId.SeedSourceModalHeader);
+        // Leaving an imported phrase adds the verify-your-backup warning.
+        text: leaving-mnemonic ? TR2.lookup(TrId.SeedSourceModalBackupWarning) : TR2.lookup(TrId.SeedSourceModalContent);
+        confirm-button-label: TR2.lookup(TrId.CommonButtonConfirm);
+        cancel-button-label: TR2.lookup(TrId.CommonButtonCancel);
+
+        cancel-clicked => {
+            confirm-modal-open = false;
+        }
+
+        confirm-clicked => {
+            confirm-modal-open = false;
+            if (confirm-target == SeedSourceKind.Device) {
+                // Deletes all accounts and rebuilds keys immediately.
+                Settings.switch-to-device();
+            } else {
+                // Nothing is deleted until a valid phrase is committed; backing
+                // out of the import keeps everything as-is.
+                Navigate.import-seed({ });
             }
         }
     }
