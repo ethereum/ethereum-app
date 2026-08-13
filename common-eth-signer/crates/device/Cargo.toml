@@ -1,0 +1,34 @@
+[package]
+name = "device"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Wires the signing flow and exposes the host test-scenario entry point"
+
+[lib]
+name = "device"
+path = "src/lib.rs"
+
+[[bin]]
+name = "device"
+path = "src/main.rs"
+
+[dependencies]
+signer-core.workspace = true
+signer-decoding.workspace = true
+signer-signing.workspace = true
+signer-displaying.workspace = true
+getrandom.workspace = true
+hex.workspace = true
+
+[features]
+# Use the Slint GUI in the binary instead of the console UI.
+slint = ["signer-displaying/slint"]
+
+[dev-dependencies]
+signer-core.workspace = true
+alloy-consensus.workspace = true
+alloy-primitives.workspace = true
+k256.workspace = true
+ciborium.workspace = true
+hex.workspace = true

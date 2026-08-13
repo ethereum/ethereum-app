@@ -1,0 +1,85 @@
+// Confirmation screen for the 480x800 device. Basic components only
+// (Window, Text, Rectangle, layouts, TouchArea, ScrollView).
+
+export component ConfirmWindow inherits Window {
+    width: 480px;
+    height: 800px;
+    background: #101010;
+
+    in property <string> screen-title;
+    // Pre-rendered, scrollable details block (header fields + body + digests).
+    in property <string> details;
+
+    callback approve();
+    callback reject();
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 12px;
+
+        Text {
+            text: root.screen-title;
+            color: white;
+            font-size: 26px;
+            font-weight: 700;
+            horizontal-alignment: center;
+        }
+
+        Rectangle {
+            height: 2px;
+            background: #333333;
+        }
+
+        Flickable {
+            vertical-stretch: 1;
+            viewport-width: self.width;
+            viewport-height: detail.preferred-height;
+            detail := Text {
+                width: parent.width;
+                text: root.details;
+                color: #e0e0e0;
+                font-size: 16px;
+                wrap: word-wrap;
+            }
+        }
+
+        HorizontalLayout {
+            height: 64px;
+            spacing: 16px;
+
+            Rectangle {
+                background: #8b1a1a;
+                border-radius: 8px;
+                Text {
+                    text: "Reject";
+                    color: white;
+                    font-size: 20px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                TouchArea {
+                    clicked => {
+                        root.reject();
+                    }
+                }
+            }
+
+            Rectangle {
+                background: #1a6b2f;
+                border-radius: 8px;
+                Text {
+                    text: "Approve";
+                    color: white;
+                    font-size: 20px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                TouchArea {
+                    clicked => {
+                        root.approve();
+                    }
+                }
+            }
+        }
+    }
+}

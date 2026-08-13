@@ -1,0 +1,24 @@
+[package]
+name = "signer-signing"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Derives keys from BIP-39 entropy and signs decoded eth-sign-requests"
+
+[dependencies]
+signer-core.workspace = true
+alloy-primitives.workspace = true
+alloy-consensus.workspace = true
+bip39.workspace = true
+bip32.workspace = true
+k256.workspace = true
+# Enables a getrandom backend so the transitive rand_core/getrandom dependency
+# (k256, elliptic-curve, bip32) compiles for bare-metal device targets.
+getrandom.workspace = true
+
+[dev-dependencies]
+signer-core.workspace = true
+alloy-primitives.workspace = true
+alloy-consensus.workspace = true
+k256.workspace = true
+hex.workspace = true

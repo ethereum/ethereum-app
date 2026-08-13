@@ -1,0 +1,28 @@
+[package]
+name = "signer-displaying"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Confirmation UI: pure view-model + headless/console backends, optional Slint GUI"
+build = "build.rs"
+
+[dependencies]
+signer-core.workspace = true
+alloy-primitives.workspace = true
+hex.workspace = true
+serde_json.workspace = true
+slint = { workspace = true, optional = true }
+
+[build-dependencies]
+slint-build = { workspace = true, optional = true }
+
+[features]
+# Compiles the Slint declarative UI (software renderer). Off by default so the
+# whole flow builds and tests headless without pulling GUI system libraries.
+slint = ["dep:slint", "dep:slint-build"]
+
+[dev-dependencies]
+hex.workspace = true
+signer-core.workspace = true
+alloy-primitives.workspace = true
+alloy-consensus.workspace = true
