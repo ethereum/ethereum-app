@@ -122,6 +122,14 @@ component AccountActions inherits HorizontalLayout {
     alignment: space-between;
 
     ActionItem {
+        icon: "chain";
+        text: TR2.lookup(TrId.AccountsConnectWallet);
+        clicked => {
+            Navigate.account-connect({ account-id: account-id }, { });
+        }
+    }
+
+    ActionItem {
         icon: "list";
         text: TR2.lookup(TrId.AccountsVerifyAddress);
         clicked => {

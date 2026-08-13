@@ -36,6 +36,10 @@ file-backed = { path = ".foundation-sdk/current/lib/keyos/utils/file-backed" }
 # they resolve against common-eth-signer's own workspace, not this one.
 signer-core = { path = "../common-eth-signer/crates/core" }
 signer-signing = { path = "../common-eth-signer/crates/signing" }
+signer-decoding = { path = "../common-eth-signer/crates/decoding" }
+# UR text encoding ("ur:crypto-hdkey/...") for the connect-wallet QR. Same
+# version the platform's QR helpers use.
+foundation-ur = "0.4"
 # Same majors as signer-signing so SigningKey/Address types unify.
 k256 = { version = "0.13", features = ["ecdsa"] }
 bip39 = "2"

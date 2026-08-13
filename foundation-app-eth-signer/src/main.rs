@@ -7,6 +7,7 @@
 
 mod account_id;
 mod callbacks;
+mod connect_account;
 mod create_account;
 mod enter_passphrase;
 mod eth_keys;
@@ -90,7 +91,7 @@ fn app_main(cx: AppContext, ui: AppWindow) {
     // consent prompt is presented against this app's gui connection and is
     // dropped (=> denied, app aborts) when the call comes from a detached
     // worker at launch.
-    // const DEV_APP_SEED: [u8; 32] = [0x42; 32];
+    //const DEV_APP_SEED: [u8; 32] = [0x42; 32];
     let app_seed = Security::default().app_seed().expect("app seed unavailable");
 
     let state = StoredValue::new(AppState::new(ui.as_weak()));
@@ -100,7 +101,7 @@ fn app_main(cx: AppContext, ui: AppWindow) {
     spawn_local(async move {
         let result = spawn_worker(async move {
             //eth_keys::KeyCache::init(&DEV_APP_SEED)
-            eth_keys::KeyCache::init(app_seed.as_bytes())
+	      eth_keys::KeyCache::init(app_seed.as_bytes())
         })
         .await;
         match result {
@@ -115,6 +116,7 @@ fn app_main(cx: AppContext, ui: AppWindow) {
     .detach();
 
     callbacks::init_callbacks(state);
+    connect_account::init(state);
     create_account::init(state);
     verify_address::init(state);
     enter_passphrase::init(state);

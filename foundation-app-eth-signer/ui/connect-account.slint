@@ -1,0 +1,8 @@
+// SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: MIT
+
+export global ConnectAccount {
+    // The single-part "ur:crypto-hdkey/..." (ERC-4527) encoding of the
+    // account's extended public key, rendered as a QR by the connect page.
+    pure callback export-account-qr(account-id: string) -> string;
+}

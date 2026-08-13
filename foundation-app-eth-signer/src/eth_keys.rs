@@ -55,6 +55,35 @@ impl KeyCache {
         &self.master_fingerprint
     }
 
+    /// Master fingerprint as the u32 used by `crypto-keypath`'s
+    /// source-fingerprint field.
+    pub fn master_fingerprint_u32(&self) -> u32 {
+        let mut bytes = [0u8; 4];
+        hex::decode_to_slice(&self.master_fingerprint, &mut bytes)
+            .expect("fingerprint is 4 hex-encoded bytes");
+        u32::from_be_bytes(bytes)
+    }
+
+    /// The account-level extended public key for m/44'/60'/account':
+    /// (compressed public key, chain code). This is what a watch-only wallet
+    /// needs to derive the 0/i child addresses (ERC-4527 `crypto-hdkey`).
+    pub fn account_hdkey(&self, account: u32) -> anyhow::Result<([u8; 33], [u8; 32])> {
+        let child = bip32::ChildNumber::new(account, true).context("child number")?;
+        let xprv = self.coin.derive_child(child).context("derive account level")?;
+        let xpub = xprv.public_key();
+        Ok((xpub.to_bytes(), xpub.attrs().chain_code))
+    }
+
+    /// The origin keypath for account's hdkey: m/44'/60'/account'.
+    pub fn account_origin(account: u32) -> DerivationPath {
+        let mut components: Vec<ChildNumber> = COIN_PATH
+            .iter()
+            .map(|&(index, hardened)| ChildNumber { index, hardened })
+            .collect();
+        components.push(ChildNumber { index: account, hardened: true });
+        DerivationPath { components }
+    }
+
     /// The full path for account `j`, address index `i`, for display and
     /// future signing.
     #[allow(dead_code)] // exercised by tests today; the signing flow will use it
@@ -117,5 +146,20 @@ mod tests {
     #[test]
     fn path_formatting() {
         assert_eq!(KeyCache::path_for(2, 3).to_string(), "m/44'/60'/2'/0/3");
+        assert_eq!(KeyCache::account_origin(2).to_string(), "m/44'/60'/2'");
+    }
+
+    #[test]
+    fn hdkey_matches_canonical_account_key() {
+        let entropy = [7u8; 32];
+        let cache = KeyCache::init(&entropy).unwrap();
+        for account in [0u32, 1] {
+            let (key_data, chain_code) = cache.account_hdkey(account).unwrap();
+            let canonical =
+                key_from_entropy(&entropy, &KeyCache::account_origin(account)).unwrap();
+            let expected = canonical.verifying_key().to_encoded_point(true);
+            assert_eq!(key_data.as_slice(), expected.as_bytes());
+            assert_ne!(chain_code, [0u8; 32]);
+        }
     }
 }

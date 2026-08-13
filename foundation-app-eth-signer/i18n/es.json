@@ -101,7 +101,7 @@
   "connectMultiSigLoader.header": "Importing…",
   "connectMultiSigSave.title": "Save Multisig",
   "connectMultiSigSuccess.title": "Import Complete",
-  "connectScan.subheader": "Use {0} to scan this code.",
+  "connectScan.subheader": "Usa tu aplicación de billetera para escanear este código.",
   "connectScan.title": "Scan this Code",
   "connectScanSaveFile.content": "Save a file containing the wallet connection information.",
   "connectScanSaveFile.title": "Export Connection Info",

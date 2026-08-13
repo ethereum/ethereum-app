@@ -1,0 +1,60 @@
+// SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: MIT
+
+import { NavHeader, BasePage, ContentSection, PageBody, TextMd, ButtonSection, Button, QrCodeCard } from "../../../compat/widgets.slint";
+import { Palette, Importance, Size } from "../../../compat/theme.slint";
+import { TR2, TrId } from "../../../gen/tr.slint";
+
+import { Navigate } from "../../../gen/navigate.slint";
+import { AccountProps } from "../props.slint";
+import { AccountConnectProps } from "./props.slint";
+import { ConnectAccount } from "../../../connect-account.slint";
+import { VerifyAddress } from "../../../verify-address.slint";
+
+// Connect a watch-only wallet: shows the ERC-4527 crypto-hdkey UR for this
+// account, then offers the same post-connection address verification the
+// Bitcoin app had.
+export component AccountConnectPage inherits BasePage {
+    in property <AccountProps> acct-props;
+    in property <AccountConnectProps> props;
+
+    VerticalLayout {
+        NavHeader {
+            title: TR2.lookup(TrId.ConnectScanTitle);
+            clicked => {
+                Navigate.backward();
+            }
+        }
+
+        PageBody {
+            ContentSection {
+                TextMd {
+                    horizontal-alignment: center;
+                    color: Palette.content-tertiary;
+                    text: TR2.lookup(TrId.ConnectScanSubheader);
+                }
+
+                HorizontalLayout {
+                    alignment: center;
+
+                    QrCodeCard {
+                        data: ConnectAccount.export-account-qr(acct-props.account-id);
+                    }
+                }
+            }
+
+            ButtonSection {
+                Button {
+                    label: TR2.lookup(TrId.CommonButtonVerifyAddress);
+                    clicked => {
+                        VerifyAddress.verify-address({
+                            account-id: acct-props.account-id,
+                            show-skip-button: true,
+                            show-view-all: false,
+                        });
+                    }
+                }
+            }
+        }
+    }
+}
