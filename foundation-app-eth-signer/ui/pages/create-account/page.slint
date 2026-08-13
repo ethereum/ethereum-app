@@ -5,7 +5,7 @@ import { CreateAccountProps } from "./props.slint";
 import { CreateAccount, CreateAccountState } from "../../create-account.slint";
 import { IconButton, AppHeader, BasePage, PageBody,
          ContentSection,
-         TitledInput, ButtonSection, Button, TextMd,
+         TitledInput, ButtonSection, Button, TextMd, ShowHide,
          TimerCircularProgress, NavHeader, HeadingMd,
          WrappedIcon, JumboIconPageBody
      } from "../../compat/widgets.slint";
@@ -94,6 +94,12 @@ export component CreateAccountPage inherits BasePage {
 
     property <string> new-label;
     property <bool> label-error: true;
+    // Use strings to represent u32, since slint ints are i32.
+    property <string> next-available-index: CreateAccount.get-next-index();
+    property <string> new-index: CreateAccount.get-next-index();
+    property <string> index-message: CreateAccount.validate-new-index(new-index);
+    property <bool> index-error: index-message != "";
+    property <bool> has-errors: label-error || index-error;
 
     // The CreateAccount global outlives this page; a stale Success/Error left
     // behind by a previous visit (e.g. leaving the success screen through a
@@ -136,15 +142,47 @@ export component CreateAccountPage inherits BasePage {
                         label-error = self.has-notice;
                     }
                 }
+
+                ShowHide {
+                    text: TR2.lookup(TrId.CreateAccountAdvancedOptions);
+
+                    ContentSection {
+                        index-input := TitledInput {
+                            title: TR2.lookup(TrId.CreateAccountIndex);
+                            text: new-index;
+                            message: index-message;
+                            has-disabled: self.message != "" || self.text == "";
+                            input-type: InputType.number;
+                            bounded-number: true;
+                            minimum: "0";
+                            maximum: "2147483647";  // BIP32 hardened indices use bit 31 as flag, so max is 2^31-1
+
+                            edited(text) => {
+                                new-index = text;
+                                self.message = CreateAccount.validate-new-index(new-index);
+                                self.has-disabled = self.message != "" || text == "";
+                                index-error = self.has-disabled;
+                            }
+
+                            accepted(text) => {
+                                if (text == "") {
+                                    self.text = next-available-index;
+                                    self.edited(self.text);
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             ButtonSection {
                 Button {
                     label: TR2.lookup(TrId.CommonButtonCreate);
-                    enabled: !label-error;
+                    enabled: !has-errors;
                     clicked => {
                         CreateAccount.create-single-sig({
                             label: new-label,
+                            index: new-index,
                         });
                     }
                 }

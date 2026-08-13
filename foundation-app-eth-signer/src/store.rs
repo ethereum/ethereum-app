@@ -78,7 +78,7 @@ impl AccountStore {
     }
 
     /// Lowest unused account index under `fingerprint` (deletion frees it).
-    fn next_index(&self, fingerprint: &str) -> u32 {
+    pub fn next_index(&self, fingerprint: &str) -> u32 {
         (0..)
             .find(|i| {
                 !self.data.accounts.iter().any(|a| a.fingerprint == fingerprint && a.index == *i)
@@ -86,14 +86,41 @@ impl AccountStore {
             .unwrap_or(0)
     }
 
-    pub fn create(&mut self, label: &str, fingerprint: &str) -> anyhow::Result<AccountId> {
+    /// None when the index is usable; a user-facing warning otherwise.
+    pub fn validate_index(&self, fingerprint: &str, index: u32) -> Option<String> {
+        if index >= 0x8000_0000 {
+            return Some(format!("Index {index} exceeds maximum BIP32 hardened index (2147483647)"));
+        }
+        self.data
+            .accounts
+            .iter()
+            .find(|a| a.fingerprint == fingerprint && a.index == index)
+            .map(|a| {
+                if a.archived {
+                    tr::lookup_id(TrId::CommonCreateAccountIndexArchived).to_string()
+                } else {
+                    tr::lookup_id(TrId::CommonCreateAccountIndexUsed).to_string()
+                }
+            })
+    }
+
+    /// Create an account at `index`, or at the first unused index when None.
+    pub fn create(
+        &mut self,
+        label: &str,
+        fingerprint: &str,
+        index: Option<u32>,
+    ) -> anyhow::Result<AccountId> {
         if fingerprint.is_empty() {
             anyhow::bail!("keys not initialized yet");
         }
         if let Some(msg) = self.validate_label(label, fingerprint) {
             anyhow::bail!("invalid label: {msg}");
         }
-        let index = self.next_index(fingerprint);
+        let index = index.unwrap_or_else(|| self.next_index(fingerprint));
+        if let Some(msg) = self.validate_index(fingerprint, index) {
+            anyhow::bail!("invalid index: {msg}");
+        }
         self.data.guard().accounts.push(EthAccountConfig {
             index,
             name: label.trim().to_string(),

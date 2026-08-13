@@ -3,6 +3,8 @@
 
 export struct CreateSingleSigOptions {
     label: string,
+    // BIP-44 account index, as a string (slint ints are i32, indices are u32).
+    index: string,
 }
 
 export enum CreateAccountState {
@@ -20,5 +22,9 @@ export global CreateAccount {
     callback create-single-sig(CreateSingleSigOptions);
 
     callback validate-new-label(string) -> string;
+    // Empty when the index is free; a warning message otherwise.
+    pure callback validate-new-index(string) -> string;
+    // The first unused index of the active wallet.
+    pure callback get-next-index() -> string;
     callback update-account-name(account-id: string, name: string);
 }

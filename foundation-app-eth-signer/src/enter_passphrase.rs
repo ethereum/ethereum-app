@@ -92,7 +92,7 @@ async fn create_initial_account(state: StoredValue<AppState>, label: String, pas
         s.use_passphrase = true;
         let fingerprint = keys.master_fingerprint().to_string();
         s.store
-            .create(&label, &fingerprint)
+            .create(&label, &fingerprint, None)
             .inspect_err(|e| log::error!("failed to create initial passphrase account: {e:?}"))
             .ok();
         s.refresh_slint_accounts();
