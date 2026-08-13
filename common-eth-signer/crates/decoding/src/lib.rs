@@ -5,10 +5,12 @@
 //! host/QR scanner, not the signer logic).
 
 mod encode;
+mod hdkey;
 mod keypath;
 mod request;
 mod tx;
 mod value;
 
 pub use encode::encode_eth_signature;
+pub use hdkey::encode_crypto_hdkey;
 pub use request::decode_sign_request;
