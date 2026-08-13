@@ -29,6 +29,18 @@ pub fn init_callbacks(state: StoredValue<AppState>) {
 
     callbacks.on_scan_clicked({
         move || {
+            // No accounts (active or archived) in the current wallet: nothing
+            // a sign request could match. The button is disabled in the UI;
+            // this is the backstop.
+            {
+                let s = state.borrow();
+                let fingerprint = s.current_fingerprint();
+                if fingerprint.is_empty() || s.store.count_for(&fingerprint) == 0 {
+                    log::info!("scan blocked: no accounts in the current wallet");
+                    return;
+                }
+            }
+
             // Expect an ERC-4527 eth-sign-request UR; anything else lands on
             // the sign page's error state.
             let opts = ScanQrOptions {

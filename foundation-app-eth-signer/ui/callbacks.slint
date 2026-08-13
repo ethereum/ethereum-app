@@ -21,6 +21,9 @@ export struct AccountView {
 
 export global Callbacks {
     callback scan-clicked();
+    // False while the active wallet owns no account (active or archived):
+    // there is nothing a sign request could be matched against.
+    in property <bool> can-scan: false;
 
     in-out property <[AccountView]> accounts: [];
     pure callback account-details(account-id: string) -> AccountView;

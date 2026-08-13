@@ -39,12 +39,31 @@ export struct EthTypedDataView {
     origin: string,
 }
 
+// A decoded eth-sign-request EIP-191 personal message.
+export struct EthMessageView {
+    // The message text, or its hex encoding when not displayable.
+    text: string,
+    // False when the raw bytes are not cleanly displayable (shown as hex,
+    // with a warning).
+    displayable: bool,
+    // ERC-8213 EIP-191 Digest (0x…).
+    eip191-digest: string,
+    origin: string,
+}
+
+export enum SignRequestKind {
+    Transaction,
+    TypedData,
+    Message,
+}
+
 export global SignTx {
     in property <SignTxState> state;
     // Which confirmation layout the sign page shows.
-    in property <bool> is-typed-data;
+    in property <SignRequestKind> kind;
     in property <EthTxView> pending-tx;
     in property <EthTypedDataView> pending-typed-data;
+    in property <EthMessageView> pending-message;
     // Shown on the error page (invalid QR, unsupported type, wrong key, ...).
     in property <string> error-message;
     // Single-part "ur:eth-signature/..." shown as a QR after signing.

@@ -112,6 +112,9 @@ impl AppState {
         let ui = self.ui();
         let cb = ui.global::<Callbacks>();
         cb.set_accounts(ModelRc::from(self.model.clone()));
+        // Scanning a sign request is pointless (and blocked) until the active
+        // wallet owns at least one account, archived or not.
+        cb.set_can_scan(!fingerprint.is_empty() && self.store.count_for(&fingerprint) > 0);
     }
 
     pub fn update_account_config<F>(state: StoredValue<AppState>, id: AccountId, f: F)

@@ -14,7 +14,7 @@ import { LightPalette } from "../../compat/palettes/light-palette.slint";
 import { TR2, TrId } from "../../gen/tr.slint";
 
 import { SignTxProps } from "./props.slint";
-import { SignTx, SignTxState, EthTxView, EthTypedDataView } from "../../sign-tx.slint";
+import { SignTx, SignTxState, SignRequestKind, EthTxView, EthTypedDataView, EthMessageView } from "../../sign-tx.slint";
 import { Navigate } from "../../gen/navigate.slint";
 
 component CardSectionTitle inherits HorizontalLayout {
@@ -207,9 +207,11 @@ component HashQrCard inherits LineCard {
     }
 }
 
-// Scrollable pretty-printed JSON of the typed-data message.
-component TypedDataJsonCard inherits LineCard {
-    in property <EthTypedDataView> td;
+// A titled card with scrollable, word-wrapped text (typed-data JSON or an
+// EIP-191 message body).
+component ScrollTextCard inherits LineCard {
+    in property <string> title;
+    in property <string> body;
 
     card-color: CardColor.blue;
     width: 448px;
@@ -222,7 +224,7 @@ component TypedDataJsonCard inherits LineCard {
 
         CardSectionTitle {
             TitleText {
-                text: TR2.lookup(TrId.SignTxMessageTitle);
+                text: title;
             }
         }
 
@@ -238,13 +240,13 @@ component TypedDataJsonCard inherits LineCard {
                 width: parent.width - Size.sz4;
                 height: parent.height - Size.sz2;
                 viewport-width: self.width;
-                viewport-height: json-content.preferred-height;
+                viewport-height: text-content.preferred-height;
 
-                json-content := VerticalLayout {
+                text-content := VerticalLayout {
                     width: flick.width;
 
                     TextSm {
-                        text: td.json;
+                        text: body;
                         color: Palette.content-primary;
                         wrap: word-wrap;
                     }
@@ -254,14 +256,43 @@ component TypedDataJsonCard inherits LineCard {
     }
 }
 
+component WarningRow inherits HorizontalLayout {
+    in property <string> text;
+
+    alignment: center;
+    spacing: Size.sz2;
+
+    VerticalLayout {
+        alignment: center;
+        Icon {
+            name: "alert";
+            color: Palette.content-notice;
+            size: Size.sz5;
+        }
+    }
+
+    TextSm {
+        text: root.text;
+        color: Palette.content-notice;
+        vertical-alignment: center;
+        wrap: word-wrap;
+        width: 380px;
+    }
+}
+
 component SignPage inherits VerticalLayout {
     property <bool> signing: SignTx.state == SignTxState.Signing;
-    property <bool> typed: SignTx.is-typed-data;
+    property <SignRequestKind> kind: SignTx.kind;
+    property <bool> typed: kind == SignRequestKind.TypedData;
+    property <bool> message: kind == SignRequestKind.Message;
     property <EthTxView> tx: SignTx.pending-tx;
     property <EthTypedDataView> td: SignTx.pending-typed-data;
+    property <EthMessageView> msg: SignTx.pending-message;
 
     NavHeader {
-        title: typed ? TR2.lookup(TrId.SignTxTypedDataTitle) : TR2.lookup(TrId.SigningTransactionTitle);
+        title: typed ? TR2.lookup(TrId.SignTxTypedDataTitle)
+            : message ? TR2.lookup(TrId.SignMessageTitle)
+            : TR2.lookup(TrId.SigningTransactionTitle);
         left-icon: "chevron-left";
 
         clicked => {
@@ -279,34 +310,22 @@ component SignPage inherits VerticalLayout {
             spacing: Size.sz2;
 
             TextSm {
-                text: typed ? TR2.lookup(TrId.SignTxTypedDataSubheader) : TR2.lookup(TrId.SigningTransactionSubheader);
+                text: typed ? TR2.lookup(TrId.SignTxTypedDataSubheader)
+                    : message ? TR2.lookup(TrId.SignTxMessageSubheader)
+                    : TR2.lookup(TrId.SigningTransactionSubheader);
                 color: Palette.content-tertiary;
                 horizontal-alignment: center;
             }
 
-            if !typed && tx.has-data: HorizontalLayout {
-                alignment: center;
-                spacing: Size.sz2;
-
-                VerticalLayout {
-                    alignment: center;
-                    Icon {
-                        name: "alert";
-                        color: Palette.content-notice;
-                        size: Size.sz5;
-                    }
-                }
-
-                TextSm {
-                    text: TR2.lookup(TrId.SignTxDataWarning);
-                    color: Palette.content-notice;
-                    vertical-alignment: center;
-                    wrap: word-wrap;
-                    width: 380px;
-                }
+            if kind == SignRequestKind.Transaction && tx.has-data: WarningRow {
+                text: TR2.lookup(TrId.SignTxDataWarning);
             }
 
-            if !typed: Pagination {
+            if message && !msg.displayable: WarningRow {
+                text: TR2.lookup(TrId.SignTxMessageWarning);
+            }
+
+            if kind == SignRequestKind.Transaction: Pagination {
                 total-pages: tx.has-data ? 3 : 2;
                 height: 366px;
                 width: 448px;
@@ -346,8 +365,9 @@ component SignPage inherits VerticalLayout {
 
                 VerticalLayout {
                     width: 448px;
-                    TypedDataJsonCard {
-                        td: td;
+                    ScrollTextCard {
+                        title: TR2.lookup(TrId.SignTxMessageTitle);
+                        body: td.json;
                     }
                 }
 
@@ -372,6 +392,32 @@ component SignPage inherits VerticalLayout {
                     HashQrCard {
                         title: TR2.lookup(TrId.SignTxMessageHash);
                         value: td.message-hash;
+                    }
+                }
+            }
+
+            // EIP-191 personal message: the scrollable message plus its
+            // ERC-8213 EIP-191 Digest.
+            if message: Pagination {
+                total-pages: 2;
+                height: 366px;
+                width: 448px;
+                page-spacing: Size.sz2_5;
+                dots-padding-top: Size.sz2;
+
+                VerticalLayout {
+                    width: 448px;
+                    ScrollTextCard {
+                        title: TR2.lookup(TrId.SignTxMessageTitle);
+                        body: msg.text;
+                    }
+                }
+
+                VerticalLayout {
+                    width: 448px;
+                    HashQrCard {
+                        title: TR2.lookup(TrId.SignTxEip191Digest);
+                        value: msg.eip191-digest;
                     }
                 }
             }

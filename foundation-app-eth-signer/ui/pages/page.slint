@@ -235,8 +235,11 @@ component AccountsPage inherits BasePage {
                 importance: Importance.normal;
                 icon-size: Size.sz12;
                 size: Size.sz12;
+                enabled: Callbacks.can-scan;
                 clicked => {
-                    Callbacks.scan-clicked();
+                    if (Callbacks.can-scan) {
+                        Callbacks.scan-clicked();
+                    }
                 }
             }
         }

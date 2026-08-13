@@ -71,6 +71,12 @@ impl AccountStore {
         self.data.accounts.iter().filter(|a| a.fingerprint == fingerprint).count()
     }
 
+    /// Whether the wallet owns an account with this BIP-44 index, active or
+    /// archived.
+    pub fn has_account_index(&self, fingerprint: &str, index: u32) -> bool {
+        self.data.accounts.iter().any(|a| a.fingerprint == fingerprint && a.index == index)
+    }
+
     /// Lowest unused account index under `fingerprint` (deletion frees it).
     fn next_index(&self, fingerprint: &str) -> u32 {
         (0..)

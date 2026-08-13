@@ -11,7 +11,10 @@
 //! decode fine but land on a "not supported yet" placeholder.
 
 use {
-    crate::{state::AppState, tr, EthTxView, EthTypedDataView, Navigate, SignTx, SignTxState, TrId},
+    crate::{
+        state::AppState, tr, EthMessageView, EthTxView, EthTypedDataView, Navigate, SignRequestKind,
+        SignTx, SignTxState, TrId,
+    },
     signer_core::{MessageKind, SignRequest},
     slint_keyos_platform::{
         gui_server_api::navigation::qrscanner::ScanQrResult,
@@ -91,11 +94,6 @@ fn prepare_request(state: StoredValue<AppState>, cbor: &[u8]) -> anyhow::Result<
         }
     };
 
-    // Placeholder until EIP-191 (raw bytes) support lands.
-    if matches!(request.message, MessageKind::Eip191(_)) {
-        anyhow::bail!("{}", tr::lookup_id(TrId::SignTxUnsupportedType));
-    }
-
     let Some(keys) = state.borrow().keys() else {
         anyhow::bail!("{}", tr::lookup_id(TrId::SignTxWrongKey));
     };
@@ -115,6 +113,23 @@ fn prepare_request(state: StoredValue<AppState>, cbor: &[u8]) -> anyhow::Result<
         }
     }
 
+    // The signing key must belong to an account that actually exists on this
+    // device (active or archived), i.e. the path is m/44'/60'/j'/0/i for an
+    // account #j of the current wallet.
+    {
+        let s = state.borrow();
+        let account_index = account_index_of(&request.derivation_path)
+            .ok_or_else(|| anyhow::anyhow!("{}", tr::lookup_id(TrId::SignTxNoAccount)))?;
+        let fingerprint = s.current_fingerprint();
+        if !s.store.has_account_index(&fingerprint, account_index) {
+            log::error!(
+                "request path {} matches no account (wallet {fingerprint})",
+                request.derivation_path
+            );
+            anyhow::bail!("{}", tr::lookup_id(TrId::SignTxNoAccount));
+        }
+    }
+
     let model = signer_displaying::build_view_model(&request, signer);
     let origin = model.origin.clone().unwrap_or_default();
 
@@ -124,7 +139,7 @@ fn prepare_request(state: StoredValue<AppState>, cbor: &[u8]) -> anyhow::Result<
         let global = ui.global::<SignTx>();
         match model.body {
             signer_displaying::ConfirmBody::Transaction(tx) => {
-                global.set_is_typed_data(false);
+                global.set_kind(SignRequestKind::Transaction);
                 global.set_pending_tx(build_tx_view(tx, &model.signer_address, model.chain_id, &origin));
             }
             signer_displaying::ConfirmBody::TypedData {
@@ -133,7 +148,7 @@ fn prepare_request(state: StoredValue<AppState>, cbor: &[u8]) -> anyhow::Result<
                 domain_hash,
                 message_hash,
             } => {
-                global.set_is_typed_data(true);
+                global.set_kind(SignRequestKind::TypedData);
                 global.set_pending_typed_data(EthTypedDataView {
                     json: json_pretty.into(),
                     eip712_digest: eip712_digest.into(),
@@ -142,8 +157,10 @@ fn prepare_request(state: StoredValue<AppState>, cbor: &[u8]) -> anyhow::Result<
                     origin: origin.into(),
                 });
             }
-            // Eip191 was rejected above.
-            signer_displaying::ConfirmBody::Message { .. } => unreachable!("EIP-191 on the sign page"),
+            signer_displaying::ConfirmBody::Message { .. } => {
+                global.set_kind(SignRequestKind::Message);
+                global.set_pending_message(build_message_view(&request, origin.clone()));
+            }
         }
         s.pending_sign_tx = Some(PendingSignTx { request, key });
         global.set_signature_ur("".into());
@@ -153,6 +170,51 @@ fn prepare_request(state: StoredValue<AppState>, cbor: &[u8]) -> anyhow::Result<
     }
 
     Ok(())
+}
+
+/// The BIP-44 account index of a standard m/44'/60'/j'/0/i request path;
+/// None when the path has any other shape.
+fn account_index_of(path: &signer_core::DerivationPath) -> Option<u32> {
+    let c = &path.components;
+    let expected_prefix =
+        [(44u32, true), (60, true)].iter().zip(c).all(|(&(i, h), comp)| comp.index == i && comp.hardened == h);
+    if c.len() == 5
+        && expected_prefix
+        && c[2].hardened
+        && !c[3].hardened
+        && c[3].index == 0
+        && !c[4].hardened
+    {
+        Some(c[2].index)
+    } else {
+        None
+    }
+}
+
+/// A message is displayable when it is valid UTF-8 containing no control
+/// characters other than whitespace; anything else falls back to hex with a
+/// warning on the sign page.
+fn build_message_view(request: &SignRequest, origin: String) -> EthMessageView {
+    let MessageKind::Eip191(message) = &request.message else {
+        unreachable!("build_message_view on a non-message request");
+    };
+
+    let digest = signer_core::eip191_digest(&message.raw);
+
+    let displayable_text = message.as_utf8.as_ref().filter(|text| {
+        text.chars().all(|c| !c.is_control() || matches!(c, '\n' | '\r' | '\t'))
+    });
+    let displayable = displayable_text.is_some();
+    let text = displayable_text
+        .cloned()
+        .unwrap_or_else(|| format!("0x{}", hex::encode(&message.raw)));
+
+    EthMessageView {
+        text: text.into(),
+        displayable,
+        eip191_digest: format!("0x{}", hex::encode(digest)).into(),
+        origin: origin.into(),
+    }
 }
 
 fn build_tx_view(
@@ -181,6 +243,42 @@ fn build_tx_view(
         origin: origin.into(),
         has_data: tx.calldata_digest.is_some(),
         data_digest: tx.calldata_digest.unwrap_or_default().into(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::account_index_of;
+    use crate::eth_keys::KeyCache;
+    use signer_core::{ChildNumber, DerivationPath};
+
+    #[test]
+    fn account_index_from_standard_paths() {
+        assert_eq!(account_index_of(&KeyCache::path_for(0, 0)), Some(0));
+        assert_eq!(account_index_of(&KeyCache::path_for(7, 42)), Some(7));
+
+        // Wrong shapes are refused.
+        assert_eq!(account_index_of(&KeyCache::account_origin(0)), None);
+        let change = DerivationPath {
+            components: vec![
+                ChildNumber { index: 44, hardened: true },
+                ChildNumber { index: 60, hardened: true },
+                ChildNumber { index: 0, hardened: true },
+                ChildNumber { index: 1, hardened: false },
+                ChildNumber { index: 0, hardened: false },
+            ],
+        };
+        assert_eq!(account_index_of(&change), None);
+        let wrong_coin = DerivationPath {
+            components: vec![
+                ChildNumber { index: 44, hardened: true },
+                ChildNumber { index: 0, hardened: true },
+                ChildNumber { index: 0, hardened: true },
+                ChildNumber { index: 0, hardened: false },
+                ChildNumber { index: 0, hardened: false },
+            ],
+        };
+        assert_eq!(account_index_of(&wrong_coin), None);
     }
 }
 
