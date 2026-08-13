@@ -28,9 +28,23 @@ export struct EthTxView {
     data-digest: string,
 }
 
+// A decoded eth-sign-request EIP-712 typed-data message, pre-formatted by
+// Rust, with the three ERC-8213 hashes.
+export struct EthTypedDataView {
+    // Pretty-printed JSON of the typed data.
+    json: string,
+    eip712-digest: string,
+    domain-hash: string,
+    message-hash: string,
+    origin: string,
+}
+
 export global SignTx {
     in property <SignTxState> state;
+    // Which confirmation layout the sign page shows.
+    in property <bool> is-typed-data;
     in property <EthTxView> pending-tx;
+    in property <EthTypedDataView> pending-typed-data;
     // Shown on the error page (invalid QR, unsupported type, wrong key, ...).
     in property <string> error-message;
     // Single-part "ur:eth-signature/..." shown as a QR after signing.

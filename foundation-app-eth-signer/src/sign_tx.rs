@@ -11,7 +11,7 @@
 //! decode fine but land on a "not supported yet" placeholder.
 
 use {
-    crate::{state::AppState, tr, EthTxView, Navigate, SignTx, SignTxState, TrId},
+    crate::{state::AppState, tr, EthTxView, EthTypedDataView, Navigate, SignTx, SignTxState, TrId},
     signer_core::{MessageKind, SignRequest},
     slint_keyos_platform::{
         gui_server_api::navigation::qrscanner::ScanQrResult,
@@ -91,8 +91,8 @@ fn prepare_request(state: StoredValue<AppState>, cbor: &[u8]) -> anyhow::Result<
         }
     };
 
-    // Placeholder until EIP-712 / EIP-191 support lands.
-    if !matches!(request.message, MessageKind::Transaction(_)) {
+    // Placeholder until EIP-191 (raw bytes) support lands.
+    if matches!(request.message, MessageKind::Eip191(_)) {
         anyhow::bail!("{}", tr::lookup_id(TrId::SignTxUnsupportedType));
     }
 
@@ -115,14 +115,37 @@ fn prepare_request(state: StoredValue<AppState>, cbor: &[u8]) -> anyhow::Result<
         }
     }
 
-    let view = build_tx_view(&request, signer);
+    let model = signer_displaying::build_view_model(&request, signer);
+    let origin = model.origin.clone().unwrap_or_default();
 
     {
         let mut s = state.borrow_mut();
-        s.pending_sign_tx = Some(PendingSignTx { request, key });
         let ui = s.ui();
         let global = ui.global::<SignTx>();
-        global.set_pending_tx(view);
+        match model.body {
+            signer_displaying::ConfirmBody::Transaction(tx) => {
+                global.set_is_typed_data(false);
+                global.set_pending_tx(build_tx_view(tx, &model.signer_address, model.chain_id, &origin));
+            }
+            signer_displaying::ConfirmBody::TypedData {
+                json_pretty,
+                eip712_digest,
+                domain_hash,
+                message_hash,
+            } => {
+                global.set_is_typed_data(true);
+                global.set_pending_typed_data(EthTypedDataView {
+                    json: json_pretty.into(),
+                    eip712_digest: eip712_digest.into(),
+                    domain_hash: domain_hash.into(),
+                    message_hash: message_hash.into(),
+                    origin: origin.into(),
+                });
+            }
+            // Eip191 was rejected above.
+            signer_displaying::ConfirmBody::Message { .. } => unreachable!("EIP-191 on the sign page"),
+        }
+        s.pending_sign_tx = Some(PendingSignTx { request, key });
         global.set_signature_ur("".into());
         global.set_error_message("".into());
         global.set_state(SignTxState::Sign);
@@ -132,14 +155,12 @@ fn prepare_request(state: StoredValue<AppState>, cbor: &[u8]) -> anyhow::Result<
     Ok(())
 }
 
-fn build_tx_view(request: &SignRequest, signer: alloy_primitives::Address) -> EthTxView {
-    let model = signer_displaying::build_view_model(request, signer);
-    let tx = match model.body {
-        signer_displaying::ConfirmBody::Transaction(tx) => tx,
-        // prepare_request only lets transactions through.
-        _ => unreachable!("non-transaction request on the sign page"),
-    };
-
+fn build_tx_view(
+    tx: signer_displaying::TxView,
+    signer_address: &str,
+    chain_id: u64,
+    origin: &str,
+) -> EthTxView {
     let to_is_address = tx.to.starts_with("0x");
     let to = if to_is_address {
         tx.to
@@ -148,16 +169,16 @@ fn build_tx_view(request: &SignRequest, signer: alloy_primitives::Address) -> Et
     };
 
     EthTxView {
-        from: model.signer_address.into(),
+        from: signer_address.into(),
         to: to.into(),
         to_is_address,
         // The request-level chain id (the tx's own field may be absent on a
         // pre-EIP-155 legacy transaction).
-        chain_id: model.chain_id.to_string().into(),
+        chain_id: chain_id.to_string().into(),
         amount: tx.value.into(),
         max_fees: tx.max_fee.into(),
         tx_type: tx.tx_type.into(),
-        origin: model.origin.unwrap_or_default().into(),
+        origin: origin.into(),
         has_data: tx.calldata_digest.is_some(),
         data_digest: tx.calldata_digest.unwrap_or_default().into(),
     }

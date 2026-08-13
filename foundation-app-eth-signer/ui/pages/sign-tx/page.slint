@@ -14,7 +14,7 @@ import { LightPalette } from "../../compat/palettes/light-palette.slint";
 import { TR2, TrId } from "../../gen/tr.slint";
 
 import { SignTxProps } from "./props.slint";
-import { SignTx, SignTxState, EthTxView } from "../../sign-tx.slint";
+import { SignTx, SignTxState, EthTxView, EthTypedDataView } from "../../sign-tx.slint";
 import { Navigate } from "../../gen/navigate.slint";
 
 component CardSectionTitle inherits HorizontalLayout {
@@ -160,8 +160,10 @@ component TxFeesCard inherits LineCard {
     }
 }
 
-component DataHashCard inherits LineCard {
-    in property <EthTxView> tx;
+// A titled 32-byte hash: chunked hex (three rows) plus its QR code.
+component HashQrCard inherits LineCard {
+    in property <string> title;
+    in property <string> value;
 
     card-color: CardColor.dark-grey;
     width: 448px;
@@ -174,12 +176,12 @@ component DataHashCard inherits LineCard {
 
         CardSectionTitle {
             TitleText {
-                text: TR2.lookup(TrId.SignTxDataHashTitle);
+                text: title;
             }
         }
 
         HexField {
-            value: tx.data-digest;
+            value: value;
             // 17 blocks of 4 -> three rows.
             field-height: Size.sz15 + Size.sz6;
         }
@@ -198,7 +200,54 @@ component DataHashCard inherits LineCard {
                 Qrcode {
                     width: 172px;
                     height: 172px;
-                    data: tx.data-digest;
+                    data: value;
+                }
+            }
+        }
+    }
+}
+
+// Scrollable pretty-printed JSON of the typed-data message.
+component TypedDataJsonCard inherits LineCard {
+    in property <EthTypedDataView> td;
+
+    card-color: CardColor.blue;
+    width: 448px;
+    height: 340px;
+
+    VerticalLayout {
+        alignment: start;
+        spacing: Size.sz2_5;
+        padding: Size.sz2;
+
+        CardSectionTitle {
+            TitleText {
+                text: TR2.lookup(TrId.SignTxMessageTitle);
+            }
+        }
+
+        CardField {
+            height: 280px;
+
+            // Layout-driven viewport (the ScrollBody idiom): the wrapped
+            // text's real height flows through the VerticalLayout's preferred
+            // height, which a plain Text child would not report.
+            flick := Flickable {
+                x: Size.sz2;
+                y: Size.sz1;
+                width: parent.width - Size.sz4;
+                height: parent.height - Size.sz2;
+                viewport-width: self.width;
+                viewport-height: json-content.preferred-height;
+
+                json-content := VerticalLayout {
+                    width: flick.width;
+
+                    TextSm {
+                        text: td.json;
+                        color: Palette.content-primary;
+                        wrap: word-wrap;
+                    }
                 }
             }
         }
@@ -207,10 +256,12 @@ component DataHashCard inherits LineCard {
 
 component SignPage inherits VerticalLayout {
     property <bool> signing: SignTx.state == SignTxState.Signing;
+    property <bool> typed: SignTx.is-typed-data;
     property <EthTxView> tx: SignTx.pending-tx;
+    property <EthTypedDataView> td: SignTx.pending-typed-data;
 
     NavHeader {
-        title: TR2.lookup(TrId.SigningTransactionTitle);
+        title: typed ? TR2.lookup(TrId.SignTxTypedDataTitle) : TR2.lookup(TrId.SigningTransactionTitle);
         left-icon: "chevron-left";
 
         clicked => {
@@ -228,12 +279,12 @@ component SignPage inherits VerticalLayout {
             spacing: Size.sz2;
 
             TextSm {
-                text: TR2.lookup(TrId.SigningTransactionSubheader);
+                text: typed ? TR2.lookup(TrId.SignTxTypedDataSubheader) : TR2.lookup(TrId.SigningTransactionSubheader);
                 color: Palette.content-tertiary;
                 horizontal-alignment: center;
             }
 
-            if tx.has-data: HorizontalLayout {
+            if !typed && tx.has-data: HorizontalLayout {
                 alignment: center;
                 spacing: Size.sz2;
 
@@ -255,7 +306,7 @@ component SignPage inherits VerticalLayout {
                 }
             }
 
-            Pagination {
+            if !typed: Pagination {
                 total-pages: tx.has-data ? 3 : 2;
                 height: 366px;
                 width: 448px;
@@ -278,8 +329,49 @@ component SignPage inherits VerticalLayout {
 
                 if tx.has-data: VerticalLayout {
                     width: 448px;
-                    DataHashCard {
-                        tx: tx;
+                    HashQrCard {
+                        title: TR2.lookup(TrId.SignTxDataHashTitle);
+                        value: tx.data-digest;
+                    }
+                }
+            }
+
+            // Typed data: the scrollable message plus its ERC-8213 hashes.
+            if typed: Pagination {
+                total-pages: 4;
+                height: 366px;
+                width: 448px;
+                page-spacing: Size.sz2_5;
+                dots-padding-top: Size.sz2;
+
+                VerticalLayout {
+                    width: 448px;
+                    TypedDataJsonCard {
+                        td: td;
+                    }
+                }
+
+                VerticalLayout {
+                    width: 448px;
+                    HashQrCard {
+                        title: TR2.lookup(TrId.SignTxEip712Digest);
+                        value: td.eip712-digest;
+                    }
+                }
+
+                VerticalLayout {
+                    width: 448px;
+                    HashQrCard {
+                        title: TR2.lookup(TrId.SignTxDomainHash);
+                        value: td.domain-hash;
+                    }
+                }
+
+                VerticalLayout {
+                    width: 448px;
+                    HashQrCard {
+                        title: TR2.lookup(TrId.SignTxMessageHash);
+                        value: td.message-hash;
                     }
                 }
             }
