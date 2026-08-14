@@ -5,10 +5,15 @@
 
 pub mod digest;
 pub mod error;
+pub mod frame_tx;
 pub mod request;
 
 pub use digest::{calldata_digest, eip191_digest, eip712_digests};
 pub use error::{Result, SignerError};
+pub use frame_tx::{
+    Frame, FrameLimits, FrameMode, FrameSignerRole, FrameTx, FrameTxError, FrameTxFees,
+    SignatureEntry, SignatureScheme, FRAME_TX_TYPE, MAX_FRAMES,
+};
 pub use request::{
     ChildNumber, DecodedTx, DerivationPath, MessageKind, PersonalMessage, SignRequest, TxDisplay,
     TypedData712,

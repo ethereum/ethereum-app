@@ -26,6 +26,12 @@ export struct EthTxView {
     has-data: bool,
     // ERC-8213 calldata digest (0x…), empty without data.
     data-digest: string,
+    // True for an EIP-8141 frame transaction; the sign page then shows the
+    // full frame/signature breakdown from `frame-details`.
+    is-frame: bool,
+    // Pre-rendered breakdown of every frame and signature entry (with
+    // explicit-digest warnings), produced by signer_displaying in Rust.
+    frame-details: string,
 }
 
 // A decoded eth-sign-request EIP-712 typed-data message, pre-formatted by

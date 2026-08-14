@@ -27,7 +27,11 @@ fn expect_list(buf: &mut &[u8]) -> Result<(), SignerError> {
 
 /// Decode an unsigned legacy transaction (data-type 1).
 ///
-/// Accepts both pre-EIP-155 (6 fields) and EIP-155 (`..., chain_id, 0, 0`) forms.
+/// Only the EIP-155 form (`..., chain_id, 0, 0`) is accepted. A 6-field
+/// pre-EIP-155 list is rejected: its signature would carry no replay
+/// protection and be valid on every EVM chain, while the confirmation screen
+/// names a single chain. The trailer must be exactly `chain_id, 0, 0` with
+/// nothing after it (EIP-155's canonical unsigned encoding).
 pub fn decode_legacy(mut buf: &[u8]) -> Result<TxLegacy, SignerError> {
     expect_list(&mut buf)?;
     let mut tx = TxLegacy {
@@ -39,11 +43,22 @@ pub fn decode_legacy(mut buf: &[u8]) -> Result<TxLegacy, SignerError> {
         value: U256::decode(&mut buf).map_err(map_rlp)?,
         input: Bytes::decode(&mut buf).map_err(map_rlp)?,
     };
-    // Optional EIP-155 trailer: chain_id, r(=0), s(=0).
+    // Required EIP-155 trailer: chain_id, r(=0), s(=0).
+    if buf.is_empty() {
+        return Err(SignerError::PreEip155Unsupported);
+    }
+    tx.chain_id = Some(u64::decode(&mut buf).map_err(map_rlp)?);
+    let r = U256::decode(&mut buf).map_err(map_rlp)?;
+    let s = U256::decode(&mut buf).map_err(map_rlp)?;
+    if !r.is_zero() || !s.is_zero() {
+        return Err(SignerError::InvalidTransaction(
+            "EIP-155 unsigned trailer must be chain_id, 0, 0".into(),
+        ));
+    }
     if !buf.is_empty() {
-        tx.chain_id = Some(u64::decode(&mut buf).map_err(map_rlp)?);
-        let _r = U256::decode(&mut buf).map_err(map_rlp)?;
-        let _s = U256::decode(&mut buf).map_err(map_rlp)?;
+        return Err(SignerError::InvalidTransaction(
+            "trailing bytes after the EIP-155 trailer".into(),
+        ));
     }
     Ok(tx)
 }
@@ -90,6 +105,7 @@ pub fn decode_typed_tx(sign_data: &[u8]) -> Result<DecodedTx, SignerError> {
     match ty {
         0x02 => Ok(DecodedTx::Eip1559(decode_eip1559(rest)?)),
         0x04 => Ok(DecodedTx::Eip7702(decode_eip7702(rest)?)),
+        0x06 => Ok(DecodedTx::Frame(crate::frame_tx::decode_frame_tx(rest)?)),
         other => Err(SignerError::InvalidTransaction(format!(
             "unsupported EIP-2718 transaction type 0x{other:02x}"
         ))),

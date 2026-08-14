@@ -11,8 +11,11 @@ mod view_model;
 #[cfg(feature = "slint")]
 mod slint_backend;
 
-pub use backends::{render_text, ConfirmationUi, ConsoleUi, Decision, HeadlessUi};
-pub use view_model::{build_view_model, ConfirmBody, ConfirmViewModel, TxView};
+pub use backends::{render_frame_details, render_text, ConfirmationUi, ConsoleUi, Decision, HeadlessUi};
+pub use view_model::{
+    build_view_model, ConfirmBody, ConfirmViewModel, FrameTxView, FrameView, SignatureEntryView,
+    TxView,
+};
 
 #[cfg(feature = "slint")]
 pub use slint_backend::SlintUi;

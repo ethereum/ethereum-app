@@ -5,6 +5,7 @@
 //! host/QR scanner, not the signer logic).
 
 mod encode;
+mod frame_tx;
 mod hdkey;
 mod keypath;
 mod request;

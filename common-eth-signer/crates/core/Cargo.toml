@@ -9,6 +9,7 @@ description = "Shared decoded types, ERC-8213 digests, and errors for the Ethere
 alloy-primitives.workspace = true
 alloy-dyn-abi.workspace = true
 alloy-consensus.workspace = true
+alloy-rlp.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

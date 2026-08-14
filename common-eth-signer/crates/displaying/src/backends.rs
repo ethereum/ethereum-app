@@ -4,7 +4,7 @@ use std::collections::VecDeque;
 
 use signer_core::SignerError;
 
-use crate::view_model::{ConfirmBody, ConfirmViewModel};
+use crate::view_model::{ConfirmBody, ConfirmViewModel, FrameTxView};
 
 /// The user's decision on a signing request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -102,7 +102,11 @@ pub fn render_text(vm: &ConfirmViewModel) -> String {
     if let Some(origin) = &vm.origin {
         s.push_str(&format!("Origin:      {origin}\n"));
     }
-    s.push_str(&format!("Chain ID:    {}\n", vm.chain_id));
+    // Request-level chain-id, when the wallet sent one. For transactions the
+    // body below prints the authoritative chain id from the signed RLP.
+    if let Some(chain_id) = vm.chain_id {
+        s.push_str(&format!("Chain ID:    {chain_id}\n"));
+    }
     s.push_str(&format!("Signer:      {}\n", vm.signer_address));
     s.push_str(&format!("Path:        {}\n", vm.derivation_path));
     s.push_str("---\n");
@@ -142,7 +146,65 @@ pub fn render_text(vm: &ConfirmViewModel) -> String {
             if let Some(digest) = &tx.calldata_digest {
                 s.push_str(&format!("Calldata Digest: {digest}\n"));
             }
+            if let Some(frame) = &tx.frame {
+                s.push_str(&render_frame_details(frame));
+            }
         }
+    }
+    s
+}
+
+/// Render an EIP-8141 frame-transaction breakdown as a human-readable text
+/// block: every frame and every signature entry, with explicit-digest entries
+/// visibly flagged. Shared by [`render_text`] and by device UIs that show the
+/// breakdown in a scrollable card — both must present the same facts.
+pub fn render_frame_details(f: &FrameTxView) -> String {
+    let mut s = String::new();
+    s.push_str("--- Frame transaction ---\n");
+    s.push_str(&format!("Sender:      {}\n", f.sender));
+    s.push_str(&format!("Nonce:       {}\n", f.nonce));
+    s.push_str(&format!("Signing as:  {}\n", f.signing_role));
+    s.push_str(&format!("Max priority fee: {}\n", f.max_priority_fee_per_gas));
+    s.push_str(&format!("Max fee per gas:  {}\n", f.max_fee_per_gas));
+    s.push_str(&format!("Max blob fee:     {}\n", f.max_fee_per_blob_gas));
+    s.push_str(&format!("Blob hashes: {}\n", f.blob_hash_count));
+
+    s.push_str(&format!("Frames ({}):\n", f.frames.len()));
+    for fr in &f.frames {
+        let data = match &fr.data_digest {
+            Some(digest) => format!("digest {digest} ({} bytes)", fr.data_len),
+            None => "(empty)".to_string(),
+        };
+        s.push_str(&format!(
+            "  [{}] {}  target: {}  value: {}  approve: {}  limits: exec {} / state {}  data: {}\n",
+            fr.index, fr.mode, fr.target, fr.value, fr.approval_scope, fr.execution_limit,
+            fr.state_limit, data,
+        ));
+        if fr.atomic_batch {
+            s.push_str(&format!("      [atomic batch with frame {}]\n", fr.index + 1));
+        }
+    }
+
+    s.push_str(&format!("Signatures ({}):\n", f.signatures.len()));
+    for sig in &f.signatures {
+        let signs = if sig.signs_canonical_hash {
+            "canonical tx hash (covers all frames)".to_string()
+        } else {
+            format!(
+                "EXPLICIT DIGEST {} -- WARNING: not bound to this transaction's frames",
+                sig.explicit_digest.as_deref().unwrap_or("(missing)"),
+            )
+        };
+        let status = match (sig.pending, sig.is_device_slot) {
+            (true, true) => "  [to be signed by this device]",
+            (false, true) => "  [this device's slot, already filled]",
+            (true, false) => "  [pending]",
+            (false, false) => "",
+        };
+        s.push_str(&format!(
+            "  [{}] {}  signer: {}  signs: {}{}\n",
+            sig.index, sig.scheme, sig.signer, signs, status,
+        ));
     }
     s
 }

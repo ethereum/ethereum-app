@@ -326,7 +326,7 @@ component SignPage inherits VerticalLayout {
             }
 
             if kind == SignRequestKind.Transaction: Pagination {
-                total-pages: tx.has-data ? 3 : 2;
+                total-pages: (tx.has-data ? 3 : 2) + (tx.is-frame ? 1 : 0);
                 height: 366px;
                 width: 448px;
                 page-spacing: Size.sz2_5;
@@ -336,6 +336,17 @@ component SignPage inherits VerticalLayout {
                     width: 448px;
                     TxMainCard {
                         tx: tx;
+                    }
+                }
+
+                // EIP-8141 frame transactions: the full per-frame and
+                // per-signature breakdown (pre-rendered by Rust, including
+                // explicit-digest warnings) in a scrollable card.
+                if tx.is-frame: VerticalLayout {
+                    width: 448px;
+                    ScrollTextCard {
+                        title: tx.tx-type;
+                        body: tx.frame-details;
                     }
                 }
 

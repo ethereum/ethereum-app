@@ -6,16 +6,27 @@ use alloy_consensus::{SignableTransaction, TxEip1559, TxEip7702, TxLegacy};
 use alloy_primitives::{address, Address, Bytes, TxKind, U256};
 use ciborium::value::{Integer, Value};
 use signer_decoding::{decode_sign_request, encode_eth_signature};
-use signer_core::{DecodedTx, MessageKind};
+use signer_core::{DecodedTx, MessageKind, SignerError};
 
 fn int(n: i128) -> Value {
     Value::Integer(Integer::try_from(n).unwrap())
 }
 
-/// Build the CBOR `eth-sign-request` framing around a `sign-data` payload.
-/// `with_tags` toggles the EIP-text tag wrapping (data-type #401, keypath #304,
-/// request-id #37) to exercise the lenient decoder against both encodings.
+/// Build the CBOR `eth-sign-request` framing around a `sign-data` payload with
+/// `chain-id` (key 4) set to 1. `with_tags` toggles the EIP-text tag wrapping
+/// (data-type #401, keypath #304, request-id #37) to exercise the lenient
+/// decoder against both encodings.
 fn build_request(data_type: i128, sign_data: Vec<u8>, with_tags: bool) -> Vec<u8> {
+    build_request_with_chain(data_type, sign_data, with_tags, Some(1))
+}
+
+/// Like [`build_request`], but with an explicit (or absent) `chain-id` (key 4).
+fn build_request_with_chain(
+    data_type: i128,
+    sign_data: Vec<u8>,
+    with_tags: bool,
+    chain_id: Option<i128>,
+) -> Vec<u8> {
     // m/44'/60'/0'/0/0 as a flat [index, hardened, ...] array.
     let comps = Value::Array(vec![
         int(44),
@@ -42,14 +53,17 @@ fn build_request(data_type: i128, sign_data: Vec<u8>, with_tags: bool) -> Vec<u8
     };
     let request_id = Value::Tag(37, Box::new(Value::Bytes(vec![0xAB; 16])));
 
-    let map = Value::Map(vec![
+    let mut entries = vec![
         (int(1), request_id),
         (int(2), Value::Bytes(sign_data)),
         (int(3), dt),
-        (int(4), int(1)),
-        (int(5), keypath),
-        (int(7), Value::Text("Test Wallet".into())),
-    ]);
+    ];
+    if let Some(c) = chain_id {
+        entries.push((int(4), int(c)));
+    }
+    entries.push((int(5), keypath));
+    entries.push((int(7), Value::Text("Test Wallet".into())));
+    let map = Value::Map(entries);
 
     let mut out = Vec::new();
     ciborium::into_writer(&map, &mut out).unwrap();
@@ -73,7 +87,7 @@ fn decode_legacy_tx() {
     tx.encode_for_signing(&mut sign_data);
 
     let req = decode_sign_request(&build_request(1, sign_data, false)).unwrap();
-    assert_eq!(req.chain_id, 1);
+    assert_eq!(req.chain_id, Some(1));
     assert_eq!(req.derivation_path.to_string(), "m/44'/60'/0'/0/0");
     assert_eq!(req.origin.as_deref(), Some("Test Wallet"));
     assert_eq!(req.request_id, Some([0xAB; 16]));
@@ -180,6 +194,128 @@ fn decode_eip712_typed_data() {
 #[test]
 fn reject_garbage() {
     assert!(decode_sign_request(&[0xff, 0x00, 0x12]).is_err());
+}
+
+/// An unsigned EIP-1559 body on the given chain, as `sign-data` bytes.
+fn eip1559_sign_data(chain_id: u64) -> Vec<u8> {
+    let tx = TxEip1559 {
+        chain_id,
+        nonce: 7,
+        max_priority_fee_per_gas: 1_000_000_000,
+        max_fee_per_gas: 20_000_000_000,
+        gas_limit: 21_000,
+        to: TxKind::Call(TO),
+        value: U256::from(1_000_000_000_000_000_000u128),
+        input: Bytes::new(),
+        access_list: Default::default(),
+    };
+    let mut sign_data = Vec::new();
+    tx.encode_for_signing(&mut sign_data);
+    sign_data
+}
+
+/// An unsigned legacy transaction, as `sign-data` bytes. `chain_id: None`
+/// yields the 6-field pre-EIP-155 list.
+fn legacy_sign_data(chain_id: Option<u64>) -> Vec<u8> {
+    let tx = TxLegacy {
+        chain_id,
+        nonce: 9,
+        gas_price: 20_000_000_000,
+        gas_limit: 21_000,
+        to: TxKind::Call(TO),
+        value: U256::from(1_000_000_000_000_000_000u128),
+        input: Bytes::new(),
+    };
+    let mut sign_data = Vec::new();
+    tx.encode_for_signing(&mut sign_data);
+    sign_data
+}
+
+/// HIGH-1: the CBOR envelope says mainnet, but the signature would commit to
+/// the chain id inside the RLP body (BNB Chain). Must be rejected at decode.
+#[test]
+fn reject_chain_id_mismatch_between_request_and_typed_tx() {
+    let cbor = build_request_with_chain(4, eip1559_sign_data(56), false, Some(1));
+    let err = decode_sign_request(&cbor).unwrap_err();
+    assert!(
+        matches!(err, SignerError::ChainIdMismatch { request: 1, transaction: 56 }),
+        "expected ChainIdMismatch, got {err:?}"
+    );
+}
+
+#[test]
+fn reject_chain_id_mismatch_between_request_and_legacy_tx() {
+    let cbor = build_request_with_chain(1, legacy_sign_data(Some(56)), false, Some(1));
+    let err = decode_sign_request(&cbor).unwrap_err();
+    assert!(
+        matches!(err, SignerError::ChainIdMismatch { request: 1, transaction: 56 }),
+        "expected ChainIdMismatch, got {err:?}"
+    );
+}
+
+/// ERC-4527 makes the request `chain-id` optional: when absent there is no
+/// envelope claim to contradict, and the RLP body alone is authoritative.
+#[test]
+fn absent_request_chain_id_defers_to_the_tx_body() {
+    let cbor = build_request_with_chain(4, eip1559_sign_data(56), false, None);
+    let req = decode_sign_request(&cbor).unwrap();
+    assert_eq!(req.chain_id, None);
+    let MessageKind::Transaction(tx) = &req.message else {
+        panic!("expected tx");
+    };
+    assert_eq!(tx.display().chain_id, Some(56));
+}
+
+/// A matching explicit chain-id is of course accepted.
+#[test]
+fn matching_request_and_tx_chain_ids_are_accepted() {
+    let cbor = build_request_with_chain(4, eip1559_sign_data(56), false, Some(56));
+    assert_eq!(decode_sign_request(&cbor).unwrap().chain_id, Some(56));
+}
+
+/// HIGH-2: a 6-field legacy list (no EIP-155 trailer) would produce a
+/// signature valid on every EVM chain. Must be rejected at decode.
+#[test]
+fn reject_pre_eip155_legacy_tx() {
+    // Regardless of whether the envelope names a chain...
+    let cbor = build_request_with_chain(1, legacy_sign_data(None), false, Some(1));
+    let err = decode_sign_request(&cbor).unwrap_err();
+    assert!(
+        matches!(err, SignerError::PreEip155Unsupported),
+        "expected PreEip155Unsupported, got {err:?}"
+    );
+    // ...or omits it entirely.
+    let cbor = build_request_with_chain(1, legacy_sign_data(None), false, None);
+    let err = decode_sign_request(&cbor).unwrap_err();
+    assert!(
+        matches!(err, SignerError::PreEip155Unsupported),
+        "expected PreEip155Unsupported, got {err:?}"
+    );
+}
+
+/// HIGH-2: the unsigned EIP-155 trailer must be exactly `chain_id, 0, 0`;
+/// non-zero r or s is not a valid unsigned transaction.
+#[test]
+fn reject_eip155_trailer_with_nonzero_r_or_s() {
+    // encode_for_signing ends with the trailer `..., chain_id, 0x80, 0x80`
+    // (RLP for r = 0, s = 0); each is a single byte we can corrupt in place
+    // without changing the list length.
+    let good = legacy_sign_data(Some(1));
+    let n = good.len();
+    assert_eq!(&good[n - 2..], &[0x80, 0x80], "trailer must end with r=0, s=0");
+
+    let mut bad_s = good.clone();
+    bad_s[n - 1] = 0x01; // s = 1
+    let err = decode_sign_request(&build_request(1, bad_s, false)).unwrap_err();
+    assert!(matches!(err, SignerError::InvalidTransaction(_)), "got {err:?}");
+
+    let mut bad_r = good.clone();
+    bad_r[n - 2] = 0x01; // r = 1
+    let err = decode_sign_request(&build_request(1, bad_r, false)).unwrap_err();
+    assert!(matches!(err, SignerError::InvalidTransaction(_)), "got {err:?}");
+
+    // The untouched encoding still decodes.
+    assert!(decode_sign_request(&build_request(1, good, false)).is_ok());
 }
 
 #[test]

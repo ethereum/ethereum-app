@@ -113,6 +113,16 @@ fn prepare_request(state: StoredValue<AppState>, cbor: &[u8]) -> anyhow::Result<
         }
     }
 
+    // EIP-8141 frame transactions: the device key must own a canonical-hash
+    // signature slot (explicit-digest asks are refused). Checked before the
+    // sign page is shown; `sign_request` re-checks it before signing.
+    if let MessageKind::Transaction(signer_core::DecodedTx::Frame(tx)) = &request.message {
+        if let Err(e) = tx.signer_role(signer) {
+            log::error!("frame sign request refused: {e}");
+            anyhow::bail!("{}", tr::lookup_id(TrId::SignTxWrongKey));
+        }
+    }
+
     // The signing key must belong to an account that actually exists on this
     // device (active or archived), i.e. the path is m/44'/60'/j'/0/i for an
     // account #j of the current wallet.
@@ -140,7 +150,7 @@ fn prepare_request(state: StoredValue<AppState>, cbor: &[u8]) -> anyhow::Result<
         match model.body {
             signer_displaying::ConfirmBody::Transaction(tx) => {
                 global.set_kind(SignRequestKind::Transaction);
-                global.set_pending_tx(build_tx_view(tx, &model.signer_address, model.chain_id, &origin));
+                global.set_pending_tx(build_tx_view(tx, &model.signer_address, &origin));
             }
             signer_displaying::ConfirmBody::TypedData {
                 json_pretty,
@@ -220,29 +230,42 @@ fn build_message_view(request: &SignRequest, origin: String) -> EthMessageView {
 fn build_tx_view(
     tx: signer_displaying::TxView,
     signer_address: &str,
-    chain_id: u64,
     origin: &str,
 ) -> EthTxView {
+    let is_frame = tx.frame.is_some();
     let to_is_address = tx.to.starts_with("0x");
-    let to = if to_is_address {
+    // A frame transaction has no single target; the common view-model already
+    // provides a descriptive label ("(frame transaction: N frames)").
+    let to = if to_is_address || is_frame {
         tx.to
     } else {
         tr::lookup_id(TrId::SignTxContractCreation).to_string()
     };
+    // The full EIP-8141 breakdown (every frame, every signature entry, with
+    // explicit-digest warnings) — the same text the common render path shows.
+    let frame_details = tx
+        .frame
+        .as_deref()
+        .map(signer_displaying::render_frame_details)
+        .unwrap_or_default();
 
     EthTxView {
         from: signer_address.into(),
         to: to.into(),
         to_is_address,
-        // The request-level chain id (the tx's own field may be absent on a
-        // pre-EIP-155 legacy transaction).
-        chain_id: chain_id.to_string().into(),
+        // The chain id from the RLP transaction body — the value the signature
+        // commits to. Never the request-level (attacker-chosen) CBOR chain-id;
+        // decoding rejects requests where the two disagree, and pre-EIP-155
+        // transactions without a chain id are refused outright.
+        chain_id: tx.chain_id.into(),
         amount: tx.value.into(),
         max_fees: tx.max_fee.into(),
         tx_type: tx.tx_type.into(),
         origin: origin.into(),
         has_data: tx.calldata_digest.is_some(),
         data_digest: tx.calldata_digest.unwrap_or_default().into(),
+        is_frame,
+        frame_details: frame_details.into(),
     }
 }
 

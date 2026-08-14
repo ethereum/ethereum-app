@@ -1,6 +1,6 @@
 //! The canonical signing-flow orchestration, generic over the confirmation UI.
 
-use signer_core::{Result, SignerError};
+use signer_core::{DecodedTx, MessageKind, Result, SignerError};
 use signer_decoding::{decode_sign_request, encode_eth_signature};
 use signer_displaying::{build_view_model, ConfirmationUi, Decision};
 use signer_signing::{address_of, key_from_entropy, sign_request};
@@ -27,6 +27,13 @@ pub fn run_signing_flow(
         if signer != expected {
             return Err(SignerError::AddressMismatch);
         }
+    }
+
+    // 2b. Frame transactions: the device key must own a canonical-hash
+    // signature slot (explicit-digest asks are refused). Checked before the
+    // UI — like AddressMismatch — and re-checked inside `sign_request`.
+    if let MessageKind::Transaction(DecodedTx::Frame(tx)) = &req.message {
+        tx.signer_role(signer)?;
     }
 
     // 3. Show the request and get the user's decision.
