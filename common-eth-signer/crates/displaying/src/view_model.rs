@@ -12,7 +12,11 @@ use signer_core::{DecodedTx, MessageKind, SignRequest, TxDisplay};
 pub struct ConfirmViewModel {
     pub title: String,
     pub origin: Option<String>,
-    pub chain_id: u64,
+    /// The request-level `chain-id` (envelope metadata; absent when the wallet
+    /// omitted it). For transactions the authoritative value is
+    /// [`TxView::chain_id`], taken from the RLP body that is actually signed;
+    /// decoding guarantees the two agree whenever both are present.
+    pub chain_id: Option<u64>,
     pub derivation_path: String,
     /// The derived signer address (EIP-55 checksummed).
     pub signer_address: String,
@@ -40,6 +44,10 @@ pub struct TxView {
     pub to: String,
     pub value: String,
     pub max_fee: String,
+    /// The chain id from the RLP transaction body — the value the signature
+    /// commits to. This, not the request-level `chain-id`, is what sign pages
+    /// must render. A pre-EIP-155 transaction (no chain id in the signed
+    /// bytes) renders the ALL CHAINS warning instead of a number.
     pub chain_id: String,
     /// Advanced tab: raw calldata hex (only when calldata is present).
     pub calldata_hex: Option<String>,
@@ -112,7 +120,9 @@ fn tx_view(tx: &DecodedTx) -> TxView {
         max_fee: format_ether(max_fee),
         chain_id: chain_id
             .map(|c| c.to_string())
-            .unwrap_or_else(|| "(unspecified)".to_string()),
+            // Pre-EIP-155: the signature carries no replay protection, so the
+            // honest chain-id line is the consequence, not a number.
+            .unwrap_or_else(|| "ALL CHAINS (no replay protection)".to_string()),
         calldata_hex: (!calldata.is_empty()).then(|| format!("0x{}", hex::encode(&calldata))),
         calldata_digest: calldata_digest.map(hex0x),
     }

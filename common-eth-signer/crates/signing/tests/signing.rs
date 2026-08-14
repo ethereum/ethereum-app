@@ -5,7 +5,7 @@ use alloy_consensus::{TxEip1559, TxLegacy};
 use alloy_primitives::{address, keccak256, Address, Bytes, TxKind, U256};
 use k256::ecdsa::{RecoveryId, Signature, VerifyingKey};
 use signer_core::{
-    ChildNumber, DecodedTx, DerivationPath, MessageKind, PersonalMessage, SignRequest,
+    ChildNumber, DecodedTx, DerivationPath, MessageKind, PersonalMessage, SignRequest, SignerError,
 };
 use signer_signing::{address_of, key_from_entropy, signing_hash, sign_request};
 
@@ -29,7 +29,7 @@ const EXPECTED: Address = address!("9858EfFD232B4033E47d90003D41EC34EcaEda94");
 fn request(message: MessageKind) -> SignRequest {
     SignRequest {
         request_id: None,
-        chain_id: 1,
+        chain_id: Some(1),
         derivation_path: eth_path(),
         address: Some(EXPECTED),
         origin: None,
@@ -92,6 +92,82 @@ fn sign_legacy_recovers_signer() {
     assert_eq!(
         recover(signing_hash(&req).as_slice(), &sig, (v - 37) as u8),
         EXPECTED
+    );
+}
+
+/// Deliberate pre-EIP-155 policy: a legacy tx with no chain id signs with the
+/// replay-anywhere v = 27/28 (the mechanism behind deterministic multi-chain
+/// deployments); the display layer warns it is valid on ALL chains.
+#[test]
+fn sign_pre_eip155_legacy_uses_v27_and_recovers_signer() {
+    let key = key_from_entropy(&ZERO_ENTROPY, &eth_path()).unwrap();
+    let tx = TxLegacy {
+        chain_id: None,
+        nonce: 0,
+        gas_price: 100_000_000_000,
+        gas_limit: 100_000,
+        to: TxKind::Call(address!("4675c7e5baafbffbca748158becba61ef3b0a263")),
+        value: U256::ZERO,
+        input: Bytes::new(),
+    };
+    // The envelope chain-id (Some(1) from request()) has nothing to
+    // contradict in a chain-id-less body and must not block signing.
+    let req = request(MessageKind::Transaction(DecodedTx::Legacy(tx)));
+    let sig = sign_request(&req, &key).unwrap();
+    let v = parse_v(&sig);
+    assert!((27..=28).contains(&v), "pre-EIP-155 v is 27/28, got {v}");
+    assert_eq!(
+        recover(signing_hash(&req).as_slice(), &sig, (v - 27) as u8),
+        EXPECTED
+    );
+}
+
+/// A hostile RLP chain id near u64::MAX must fail closed instead of
+/// overflowing `chain_id * 2 + 35 + y` (debug panic / release wrap).
+#[test]
+fn refuse_eip155_v_overflow_instead_of_panicking() {
+    let key = key_from_entropy(&ZERO_ENTROPY, &eth_path()).unwrap();
+    let tx = TxLegacy {
+        chain_id: Some(u64::MAX),
+        nonce: 0,
+        gas_price: 100_000_000_000,
+        gas_limit: 100_000,
+        to: TxKind::Call(address!("4675c7e5baafbffbca748158becba61ef3b0a263")),
+        value: U256::ZERO,
+        input: Bytes::new(),
+    };
+    // A matching envelope chain-id, so the overflow path itself is exercised.
+    let mut req = request(MessageKind::Transaction(DecodedTx::Legacy(tx)));
+    req.chain_id = Some(u64::MAX);
+    let err = sign_request(&req, &key).unwrap_err();
+    assert!(
+        matches!(err, SignerError::Signing(_)),
+        "expected Signing error, got {err:?}"
+    );
+}
+
+/// Defense in depth: even if a mismatched request slipped past the decode
+/// boundary, `sign_request` re-checks the envelope/transaction chain-id
+/// binding before any signature is produced.
+#[test]
+fn refuse_to_sign_on_chain_id_mismatch() {
+    let key = key_from_entropy(&ZERO_ENTROPY, &eth_path()).unwrap();
+    let tx = TxEip1559 {
+        chain_id: 56, // request() sets the envelope chain-id to 1
+        nonce: 1,
+        max_priority_fee_per_gas: 1_000_000_000,
+        max_fee_per_gas: 20_000_000_000,
+        gas_limit: 21_000,
+        to: TxKind::Call(address!("4675c7e5baafbffbca748158becba61ef3b0a263")),
+        value: U256::ZERO,
+        input: Bytes::new(),
+        access_list: Default::default(),
+    };
+    let req = request(MessageKind::Transaction(DecodedTx::Eip1559(tx)));
+    let err = sign_request(&req, &key).unwrap_err();
+    assert!(
+        matches!(err, SignerError::ChainIdMismatch { request: 1, transaction: 56 }),
+        "expected ChainIdMismatch, got {err:?}"
     );
 }
 

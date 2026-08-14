@@ -32,12 +32,16 @@ pub fn decode_sign_request(cbor: &[u8]) -> Result<SignRequest, SignerError> {
     let data_type =
         decode_data_type(get(map, 3).ok_or_else(|| err("missing data-type (key 3)"))?)?;
 
-    // chain-id (key 4, default 1)
+    // chain-id (key 4, optional). Absent and explicit values are kept
+    // distinct: an explicit chain-id must match the transaction body (checked
+    // below), while an absent one skips only that equality check.
     let chain_id = match get(map, 4) {
-        Some(v) => as_int(v).ok_or_else(|| err("chain-id is not an integer"))?,
-        None => 1,
+        Some(v) => {
+            let i = as_int(v).ok_or_else(|| err("chain-id is not an integer"))?;
+            Some(u64::try_from(i).map_err(|_| err("chain-id out of range"))?)
+        }
+        None => None,
     };
-    let chain_id = u64::try_from(chain_id).map_err(|_| err("chain-id out of range"))?;
 
     // derivation-path (key 5, required)
     let derivation_path =
@@ -77,7 +81,7 @@ pub fn decode_sign_request(cbor: &[u8]) -> Result<SignRequest, SignerError> {
 
     let message = decode_message(data_type, &sign_data)?;
 
-    Ok(SignRequest {
+    let request = SignRequest {
         request_id,
         chain_id,
         derivation_path,
@@ -85,7 +89,13 @@ pub fn decode_sign_request(cbor: &[u8]) -> Result<SignRequest, SignerError> {
         origin,
         raw_sign_data: sign_data,
         message,
-    })
+    };
+
+    // Fail closed at the boundary: an explicit envelope chain-id must agree
+    // with the chain id inside the transaction the signature commits to.
+    request.validate_chain_binding()?;
+
+    Ok(request)
 }
 
 /// `data-type` may be a bare integer (Keystone) or a `#3.401`-tagged

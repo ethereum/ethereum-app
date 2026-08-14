@@ -9,7 +9,7 @@ const SIGNER: alloy_primitives::Address = address!("9858EfFD232B4033E47d90003D41
 fn req(message: MessageKind) -> SignRequest {
     SignRequest {
         request_id: None,
-        chain_id: 1,
+        chain_id: Some(1),
         derivation_path: DerivationPath::default(),
         address: None,
         origin: Some("Test Wallet".into()),
@@ -63,6 +63,65 @@ fn transaction_view_model_formats_value_fee_and_digest() {
         t.calldata_digest.as_deref(),
         Some("0x812cee5d9cc7461c04bbcd7b70af9c28b243ac5d74d3453b008b93b7dac69985")
     );
+}
+
+/// Display honesty: the transaction body's chain id — the value the signature
+/// commits to — is what the sign page renders, never the request-level
+/// (attacker-chosen) CBOR chain-id. Decoding rejects such a mismatched
+/// request outright; this locks the projection itself so no future backend
+/// can regress to the envelope value.
+#[test]
+fn tx_view_renders_the_rlp_chain_id_not_the_request_one() {
+    let tx = alloy_consensus::TxEip1559 {
+        chain_id: 56, // what would actually be signed
+        nonce: 0,
+        max_priority_fee_per_gas: 1_000_000_000,
+        max_fee_per_gas: 20_000_000_000,
+        gas_limit: 21_000,
+        to: TxKind::Call(address!("4675c7e5baafbffbca748158becba61ef3b0a263")),
+        value: U256::ZERO,
+        input: Bytes::new(),
+        access_list: Default::default(),
+    };
+    // The envelope claims mainnet.
+    let vm = build_view_model(&req(MessageKind::Transaction(DecodedTx::Eip1559(tx))), SIGNER);
+    let ConfirmBody::Transaction(t) = &vm.body else {
+        panic!("expected tx body");
+    };
+    assert_eq!(t.chain_id, "56");
+    // The console rendering shows the transaction's own chain id, and only it.
+    let text = signer_displaying::render_text(&vm);
+    assert!(text.contains("Chain ID:    56"), "rendered:\n{text}");
+    assert!(!text.contains("Chain ID:    1\n"), "rendered:\n{text}");
+}
+
+/// Deliberate pre-EIP-155 policy: a legacy transaction without a chain id is
+/// signable (replay-based deterministic deployments), and honest display is
+/// the safety measure — the chain-id line must state the ALL CHAINS
+/// consequence instead of naming a chain, even when the envelope names one.
+#[test]
+fn pre_eip155_tx_view_warns_it_is_valid_on_all_chains() {
+    let tx = alloy_consensus::TxLegacy {
+        chain_id: None,
+        nonce: 0,
+        gas_price: 100_000_000_000,
+        gas_limit: 100_000,
+        to: TxKind::Call(address!("4675c7e5baafbffbca748158becba61ef3b0a263")),
+        value: U256::ZERO,
+        input: Bytes::new(),
+    };
+    // req() sets the envelope chain-id to Some(1); it must not leak through.
+    let vm = build_view_model(&req(MessageKind::Transaction(DecodedTx::Legacy(tx))), SIGNER);
+    let ConfirmBody::Transaction(t) = &vm.body else {
+        panic!("expected tx body");
+    };
+    assert_eq!(t.chain_id, "ALL CHAINS (no replay protection)");
+    let text = signer_displaying::render_text(&vm);
+    assert!(
+        text.contains("Chain ID:    ALL CHAINS (no replay protection)"),
+        "rendered:\n{text}"
+    );
+    assert!(!text.contains("Chain ID:    1\n"), "rendered:\n{text}");
 }
 
 #[test]

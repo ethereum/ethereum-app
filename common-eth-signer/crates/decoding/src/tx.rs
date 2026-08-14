@@ -27,7 +27,11 @@ fn expect_list(buf: &mut &[u8]) -> Result<(), SignerError> {
 
 /// Decode an unsigned legacy transaction (data-type 1).
 ///
-/// Accepts both pre-EIP-155 (6 fields) and EIP-155 (`..., chain_id, 0, 0`) forms.
+/// Accepts both pre-EIP-155 (6 fields, `chain_id: None` — deliberately kept
+/// signable for replay-based deterministic deployments; the display layer
+/// warns it is valid on ALL chains) and EIP-155 (`..., chain_id, 0, 0`) forms.
+/// A present trailer must carry `r = s = 0` (EIP-155's canonical unsigned
+/// encoding).
 pub fn decode_legacy(mut buf: &[u8]) -> Result<TxLegacy, SignerError> {
     expect_list(&mut buf)?;
     let mut tx = TxLegacy {
@@ -42,8 +46,13 @@ pub fn decode_legacy(mut buf: &[u8]) -> Result<TxLegacy, SignerError> {
     // Optional EIP-155 trailer: chain_id, r(=0), s(=0).
     if !buf.is_empty() {
         tx.chain_id = Some(u64::decode(&mut buf).map_err(map_rlp)?);
-        let _r = U256::decode(&mut buf).map_err(map_rlp)?;
-        let _s = U256::decode(&mut buf).map_err(map_rlp)?;
+        let r = U256::decode(&mut buf).map_err(map_rlp)?;
+        let s = U256::decode(&mut buf).map_err(map_rlp)?;
+        if !r.is_zero() || !s.is_zero() {
+            return Err(SignerError::InvalidTransaction(
+                "EIP-155 unsigned trailer must be chain_id, 0, 0".into(),
+            ));
+        }
     }
     Ok(tx)
 }

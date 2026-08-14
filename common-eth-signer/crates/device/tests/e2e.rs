@@ -16,8 +16,14 @@ fn int(n: i128) -> Value {
     Value::Integer(Integer::try_from(n).unwrap())
 }
 
-/// Build an `eth-sign-request` (m/44'/60'/0'/0/0) and return it as a hex string.
-fn build_request_hex(data_type: i128, sign_data: Vec<u8>, addr: Option<Address>) -> String {
+/// Build an `eth-sign-request` (m/44'/60'/0'/0/0, `chain-id` key 4 set to
+/// `chain_id`) and return it as a hex string.
+fn build_request_hex(
+    data_type: i128,
+    sign_data: Vec<u8>,
+    addr: Option<Address>,
+    chain_id: u64,
+) -> String {
     let comps = Value::Array(vec![
         int(44),
         Value::Bool(true),
@@ -39,7 +45,7 @@ fn build_request_hex(data_type: i128, sign_data: Vec<u8>, addr: Option<Address>)
         ),
         (int(2), Value::Bytes(sign_data)),
         (int(3), int(data_type)),
-        (int(4), int(1)),
+        (int(4), int(chain_id as i128)),
         (int(5), keypath),
     ];
     if let Some(a) = addr {
@@ -107,7 +113,7 @@ fn eip1559_happy_path_signs_and_echoes_request_id() {
     let tx = sample_tx();
     let mut sign_data = Vec::new();
     tx.encode_for_signing(&mut sign_data);
-    let req_hex = build_request_hex(4, sign_data, Some(EXPECTED));
+    let req_hex = build_request_hex(4, sign_data, Some(EXPECTED), 1);
 
     let mut ui = HeadlessUi::auto_approve();
     let out = run_scenario(&req_hex, ZERO_ENTROPY_HEX, &mut ui).unwrap();
@@ -132,7 +138,7 @@ fn legacy_eip155_sepolia_v_is_full_eip155() {
     };
     let mut sign_data = Vec::new();
     tx.encode_for_signing(&mut sign_data);
-    let req_hex = build_request_hex(1, sign_data, Some(EXPECTED));
+    let req_hex = build_request_hex(1, sign_data, Some(EXPECTED), SEPOLIA);
 
     let mut ui = HeadlessUi::auto_approve();
     let out = run_scenario(&req_hex, ZERO_ENTROPY_HEX, &mut ui).unwrap();
@@ -155,9 +161,52 @@ fn legacy_eip155_sepolia_v_is_full_eip155() {
     assert_eq!(addr, EXPECTED);
 }
 
+/// Deliberate pre-EIP-155 policy, end to end: a 6-field legacy tx (the
+/// replay-anywhere form behind deterministic multi-chain deployments) signs
+/// with v = 27/28, and the screen the user approved carried the ALL CHAINS
+/// warning instead of a chain number — even though the envelope said chain 1.
+#[test]
+fn pre_eip155_legacy_signs_with_v27_and_shows_all_chains_warning() {
+    let tx = TxLegacy {
+        chain_id: None,
+        nonce: 0,
+        gas_price: 100_000_000_000,
+        gas_limit: 100_000,
+        to: TxKind::Call(address!("4675c7e5baafbffbca748158becba61ef3b0a263")),
+        value: U256::ZERO,
+        input: Bytes::new(),
+    };
+    let mut sign_data = Vec::new();
+    tx.encode_for_signing(&mut sign_data);
+    let req_hex = build_request_hex(1, sign_data, Some(EXPECTED), 1);
+
+    let mut ui = HeadlessUi::auto_approve();
+    let out = run_scenario(&req_hex, ZERO_ENTROPY_HEX, &mut ui).unwrap();
+    let (sig, _) = parse_signature(&out);
+
+    let v = parse_v(&sig);
+    assert!((27..=28).contains(&v), "pre-EIP-155 v is 27/28, got {v}");
+    let signature = Signature::from_slice(&sig[..64]).unwrap();
+    let rid = RecoveryId::from_byte((v - 27) as u8).unwrap();
+    let vk = VerifyingKey::recover_from_prehash(tx.signature_hash().as_slice(), &signature, rid)
+        .unwrap();
+    let enc = vk.to_encoded_point(false);
+    let addr = Address::from_slice(&alloy_primitives::keccak256(&enc.as_bytes()[1..])[12..]);
+    assert_eq!(addr, EXPECTED);
+
+    // WYSIWYS: the confirmation the user approved named the consequence.
+    assert_eq!(ui.shown.len(), 1);
+    let text = signer_displaying::render_text(&ui.shown[0]);
+    assert!(
+        text.contains("Chain ID:    ALL CHAINS (no replay protection)"),
+        "rendered:\n{text}"
+    );
+    assert!(!text.contains("Chain ID:    1\n"), "rendered:\n{text}");
+}
+
 #[test]
 fn eip191_happy_path() {
-    let req_hex = build_request_hex(3, b"Hello, Bob!".to_vec(), Some(EXPECTED));
+    let req_hex = build_request_hex(3, b"Hello, Bob!".to_vec(), Some(EXPECTED), 1);
     let mut ui = HeadlessUi::auto_approve();
     let out = run_scenario(&req_hex, ZERO_ENTROPY_HEX, &mut ui).unwrap();
     let (sig, _) = parse_signature(&out);
@@ -167,7 +216,7 @@ fn eip191_happy_path() {
 
 #[test]
 fn rejection_yields_user_rejected() {
-    let req_hex = build_request_hex(3, b"nope".to_vec(), Some(EXPECTED));
+    let req_hex = build_request_hex(3, b"nope".to_vec(), Some(EXPECTED), 1);
     let mut ui = HeadlessUi::auto_reject();
     let err = run_scenario(&req_hex, ZERO_ENTROPY_HEX, &mut ui).unwrap_err();
     assert!(matches!(err, SignerError::UserRejected));
@@ -176,7 +225,7 @@ fn rejection_yields_user_rejected() {
 #[test]
 fn wrong_address_yields_mismatch_before_ui() {
     let wrong = address!("00000000000000000000000000000000deadbeef");
-    let req_hex = build_request_hex(3, b"hi".to_vec(), Some(wrong));
+    let req_hex = build_request_hex(3, b"hi".to_vec(), Some(wrong), 1);
     let mut ui = HeadlessUi::auto_approve();
     let err = run_scenario(&req_hex, ZERO_ENTROPY_HEX, &mut ui).unwrap_err();
     assert!(matches!(err, SignerError::AddressMismatch));

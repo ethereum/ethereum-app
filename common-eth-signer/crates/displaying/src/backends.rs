@@ -102,7 +102,14 @@ pub fn render_text(vm: &ConfirmViewModel) -> String {
     if let Some(origin) = &vm.origin {
         s.push_str(&format!("Origin:      {origin}\n"));
     }
-    s.push_str(&format!("Chain ID:    {}\n", vm.chain_id));
+    // Request-level chain-id, when the wallet sent one. Never shown for
+    // transactions: there the body below prints the authoritative chain id
+    // from the signed RLP (or the ALL CHAINS warning for pre-EIP-155).
+    if let Some(chain_id) = vm.chain_id {
+        if !matches!(vm.body, ConfirmBody::Transaction(_)) {
+            s.push_str(&format!("Chain ID:    {chain_id}\n"));
+        }
+    }
     s.push_str(&format!("Signer:      {}\n", vm.signer_address));
     s.push_str(&format!("Path:        {}\n", vm.derivation_path));
     s.push_str("---\n");

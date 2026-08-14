@@ -14,16 +14,23 @@ use crate::hashing::signing_hash;
 /// - Legacy **EIP-155** transaction: `chain_id*2 + 35 + recovery_id` (the full
 ///   EIP-155 `v`; may be several bytes for large chain ids — e.g. 4 bytes on
 ///   Sepolia, making the signature 68 bytes).
-/// - Legacy pre-EIP-155 transaction (no chain id): `27 + recovery_id`.
+/// - Legacy pre-EIP-155 transaction (no chain id): `27 + recovery_id` — the
+///   replay-anywhere signature, deliberately supported for deterministic
+///   multi-chain deployments; the display layer warns it is valid on ALL chains.
 /// - EIP-2718 typed transactions (1559 / 7702): `recovery_id` (`y_parity`, 0/1).
 /// - EIP-191 and EIP-712: `27 + recovery_id`.
 pub fn sign_request(req: &SignRequest, key: &SigningKey) -> Result<Vec<u8>> {
+    // Re-verify the envelope/transaction chain-id binding before any
+    // signature exists (the decoder already checked; deliberate redundancy
+    // so a single skipped branch cannot authorize a mismatched signature).
+    req.validate_chain_binding()?;
+
     let hash = signing_hash(req);
     let (signature, recovery_id) = key
         .sign_prehash_recoverable(hash.as_slice())
         .map_err(|e| SignerError::Signing(e.to_string()))?;
 
-    let v = v_value(&req.message, recovery_id);
+    let v = v_value(&req.message, recovery_id)?;
 
     let mut out = Vec::with_capacity(64 + 8);
     out.extend_from_slice(&signature.r().to_bytes());
@@ -32,18 +39,23 @@ pub fn sign_request(req: &SignRequest, key: &SigningKey) -> Result<Vec<u8>> {
     Ok(out)
 }
 
-fn v_value(message: &MessageKind, recovery_id: RecoveryId) -> u64 {
+fn v_value(message: &MessageKind, recovery_id: RecoveryId) -> Result<u64> {
     let y = recovery_id.to_byte() as u64; // 0 or 1
-    match message {
+    Ok(match message {
         MessageKind::Transaction(DecodedTx::Legacy(t)) => match t.chain_id {
-            Some(chain_id) => chain_id * 2 + 35 + y, // EIP-155
-            None => 27 + y,                          // pre-EIP-155
+            // EIP-155: chain_id * 2 + 35 + y, checked so a hostile chain id
+            // near u64::MAX cannot overflow (debug panic / release wrap).
+            Some(chain_id) => chain_id
+                .checked_mul(2)
+                .and_then(|c| c.checked_add(35 + y))
+                .ok_or_else(|| SignerError::Signing("chain id overflows EIP-155 v".into()))?,
+            None => 27 + y, // pre-EIP-155
         },
         // Typed transactions carry the raw y-parity.
         MessageKind::Transaction(_) => y,
         // personal_sign / typed data use the classic 27/28.
         _ => 27 + y,
-    }
+    })
 }
 
 /// Encode `v` as a minimal big-endian byte sequence (no leading zero bytes).

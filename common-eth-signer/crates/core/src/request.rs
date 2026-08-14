@@ -4,6 +4,7 @@ use alloy_primitives::{Address, B256, U256};
 use core::fmt;
 
 use crate::digest::calldata_digest;
+use crate::error::SignerError;
 
 /// A single BIP-32 derivation step.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -159,8 +160,11 @@ pub enum MessageKind {
 pub struct SignRequest {
     /// `request-id` (UUID), echoed back in the `eth-signature`.
     pub request_id: Option<[u8; 16]>,
-    /// `chain-id` (defaults to 1 / mainnet).
-    pub chain_id: u64,
+    /// `chain-id` (ERC-4527 key 4, optional). `None` when the wallet omitted
+    /// it. This is envelope metadata only: the signature commits to the chain
+    /// id inside the transaction body, and [`SignRequest::validate_chain_binding`]
+    /// rejects any disagreement between the two.
+    pub chain_id: Option<u64>,
     /// `derivation-path` of the signing key.
     pub derivation_path: DerivationPath,
     /// Optional `address` for verifying the derived key.
@@ -171,4 +175,40 @@ pub struct SignRequest {
     pub raw_sign_data: Vec<u8>,
     /// The decoded payload.
     pub message: MessageKind,
+}
+
+impl SignRequest {
+    /// Fail-closed cross-check between the request-level `chain-id` (envelope
+    /// metadata a malicious wallet controls independently) and the chain id
+    /// embedded in the transaction the signature actually commits to
+    /// ([`SignerError::ChainIdMismatch`] on disagreement).
+    ///
+    /// Nothing to compare — nothing to check: an absent request `chain-id`
+    /// (optional per ERC-4527), a non-transaction payload (EIP-191 / EIP-712),
+    /// or a pre-EIP-155 legacy transaction. The latter is deliberately
+    /// signable — the replay-anywhere mechanism behind deterministic
+    /// multi-chain deployments (CreateX / Nick's method) — and the display
+    /// layer warns that it is valid on ALL chains instead of naming one.
+    ///
+    /// Called at the decode boundary and again immediately before signing, so
+    /// a fault on one check does not authorize a mismatched signature.
+    pub fn validate_chain_binding(&self) -> Result<(), SignerError> {
+        let MessageKind::Transaction(tx) = &self.message else {
+            return Ok(());
+        };
+        let tx_chain_id = match tx {
+            DecodedTx::Legacy(t) => t.chain_id,
+            DecodedTx::Eip1559(t) => Some(t.chain_id),
+            DecodedTx::Eip7702(t) => Some(t.chain_id),
+        };
+        if let (Some(request), Some(transaction)) = (self.chain_id, tx_chain_id) {
+            if request != transaction {
+                return Err(SignerError::ChainIdMismatch {
+                    request,
+                    transaction,
+                });
+            }
+        }
+        Ok(())
+    }
 }

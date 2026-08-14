@@ -140,7 +140,7 @@ fn prepare_request(state: StoredValue<AppState>, cbor: &[u8]) -> anyhow::Result<
         match model.body {
             signer_displaying::ConfirmBody::Transaction(tx) => {
                 global.set_kind(SignRequestKind::Transaction);
-                global.set_pending_tx(build_tx_view(tx, &model.signer_address, model.chain_id, &origin));
+                global.set_pending_tx(build_tx_view(tx, &model.signer_address, &origin));
             }
             signer_displaying::ConfirmBody::TypedData {
                 json_pretty,
@@ -220,7 +220,6 @@ fn build_message_view(request: &SignRequest, origin: String) -> EthMessageView {
 fn build_tx_view(
     tx: signer_displaying::TxView,
     signer_address: &str,
-    chain_id: u64,
     origin: &str,
 ) -> EthTxView {
     let to_is_address = tx.to.starts_with("0x");
@@ -234,9 +233,11 @@ fn build_tx_view(
         from: signer_address.into(),
         to: to.into(),
         to_is_address,
-        // The request-level chain id (the tx's own field may be absent on a
-        // pre-EIP-155 legacy transaction).
-        chain_id: chain_id.to_string().into(),
+        // The chain id from the RLP transaction body — the value the signature
+        // commits to. Never the request-level (attacker-chosen) CBOR chain-id;
+        // decoding rejects requests where the two disagree, and a pre-EIP-155
+        // transaction shows the ALL CHAINS warning instead of a number.
+        chain_id: tx.chain_id.into(),
         amount: tx.value.into(),
         max_fees: tx.max_fee.into(),
         tx_type: tx.tx_type.into(),

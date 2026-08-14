@@ -12,6 +12,11 @@ pub enum SignerError {
     #[error("invalid transaction encoding: {0}")]
     InvalidTransaction(String),
 
+    /// The request-level `chain-id` (ERC-4527 key 4) contradicts the chain id
+    /// inside the transaction that would actually be signed.
+    #[error("chain-id mismatch: request says {request}, transaction says {transaction}")]
+    ChainIdMismatch { request: u64, transaction: u64 },
+
     #[error("invalid EIP-712 typed data: {0}")]
     InvalidTypedData(String),
 
