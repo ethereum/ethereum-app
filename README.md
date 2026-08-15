@@ -2,17 +2,17 @@
 
 The Universal Ethereum Signer is a reference implementation for Ethereum hardware signers. 
 
-This monorepo is opinionated towards Rust and the [Xous](https://github.com/betrusted-io/xous-core) ecosystem, reuse of existing well maintained libraries (such as [alloy](https://alloy.rs/)), and development fully driven by automatic programming.
+This monorepo is opinionated towards Rust and feature rich ("Mb RAM class") embedded multi applications Operating Systems, reuse of existing well maintained libraries (such as [alloy](https://alloy.rs/)), and development fully driven by automatic programming.
 
 ## common-eth-signer 
 
 This crate contains abstractions of the different Ethereum primitives needed for a wallet
 
-It has no dependencies on Xous
+It has no dependencies on the underlying Operating System
 
-## foundation-app-eth-signer
+## keyos-app-eth-signer
 
-An implementation of the signer for [Foundation](https://foundation.xyz/) Passport Prime
+An implementation of the signer for [Foundation](https://foundation.xyz/) Passport Prime for KeyOS
 
 In this version the signer is airgapped using [ERC-4527](https://github.com/ethereum/ercs/blob/master/ERCS/erc-4527.md) QR codes and implements "verifiable signing" using [ERC-8213](https://erc8213.eth.limo/) - it has no dependencies whatsoever on any external data source.  
 
