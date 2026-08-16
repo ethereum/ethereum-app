@@ -189,9 +189,7 @@ fn build_menu(main_conn: xous::CID, actions_conn: xous::CID, menu_sid: xous::SID
     let mut items = Vec::<MenuItem>::new();
     for (name, op) in [
         ("Scan request", ActionOp::ScanRequest),
-        ("Select seed", ActionOp::SelectSeed),
-        ("New seed", ActionOp::CreateSeed),
-        ("Import seed", ActionOp::ImportSeed),
+        ("Seed", ActionOp::SeedMenu),
         ("Accounts", ActionOp::AccountMenu),
         ("Close Menu", ActionOp::MenuClose),
     ] {

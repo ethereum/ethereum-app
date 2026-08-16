@@ -48,19 +48,9 @@ pub fn spawn_actions(
                     manager.startup_flow();
                     manager.deactivate();
                 }
-                Some(ActionOp::SelectSeed) => {
+                Some(ActionOp::SeedMenu) => {
                     manager.activate();
-                    manager.select_seed_flow();
-                    manager.deactivate();
-                }
-                Some(ActionOp::CreateSeed) => {
-                    manager.activate();
-                    manager.generate_seed_flow();
-                    manager.deactivate();
-                }
-                Some(ActionOp::ImportSeed) => {
-                    manager.activate();
-                    manager.import_seed_flow();
+                    manager.seed_menu_flow();
                     manager.deactivate();
                 }
                 Some(ActionOp::AccountMenu) => {
@@ -163,6 +153,15 @@ impl ActionManager {
             }
         } else {
             self.select_seed_flow();
+        }
+    }
+
+    pub fn seed_menu_flow(&mut self) {
+        match self.radio("Seed", &["Select seed", "New seed", "Import seed", "Back"]).as_deref() {
+            Some("Select seed") => self.select_seed_flow(),
+            Some("New seed") => self.generate_seed_flow(),
+            Some("Import seed") => self.import_seed_flow(),
+            _ => {} // Back or aborted
         }
     }
 
@@ -653,16 +652,20 @@ impl ActionManager {
                 }
             };
             let checksummed = address.to_checksum(None);
-            // 0x + 40 hex chars, grouped 8 per line for readability
+            // one 8-hex-char group per row, scrollable in case the caption plus
+            // address is taller than the panel
             let mut grouped = String::from("0x");
             for (i, c) in checksummed[2..].chars().enumerate() {
-                if i > 0 && i % 8 == 0 {
+                if i % 8 == 0 {
                     grouped.push('\n');
                 }
                 grouped.push(c);
             }
             self.modals
-                .show_notification(&format!("Address {}/0/{}\n{}", account.path(), index, grouped), None)
+                .show_scrollable(
+                    Some(&format!("Address {}/0/{}", account.path(), index)),
+                    grouped.trim_start_matches('\n'),
+                )
                 .ok();
             // empty caption gives the QR the full panel height
             self.modals.show_notification("", Some(&checksummed)).ok();

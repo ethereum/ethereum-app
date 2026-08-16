@@ -27,10 +27,9 @@ pub enum MainOp {
 pub enum ActionOp {
     /// First-boot seed discovery: offer creation if no seeds exist, else selection
     Startup = 0,
-    SelectSeed,
-    CreateSeed,
-    ImportSeed,
-    /// Account operations submenu (select / create / delete) for the selected seed
+    /// Seed operations submenu (select / generate / import)
+    SeedMenu,
+    /// Account operations submenu (display / create / delete) for the selected seed
     AccountMenu,
     /// Scan an ERC-4527 eth-sign-request via the camera (single or multi-part UR)
     ScanRequest,
