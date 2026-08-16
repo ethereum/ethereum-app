@@ -30,6 +30,8 @@ pub enum ActionOp {
     SelectSeed,
     CreateSeed,
     ImportSeed,
+    /// Account operations submenu (select / create / delete) for the selected seed
+    AccountMenu,
     /// Dummy activate/deactivate cycle so the status screen under the menu gets redrawn
     MenuClose,
     Quit,
