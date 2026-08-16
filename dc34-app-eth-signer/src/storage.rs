@@ -66,6 +66,10 @@ impl SeedStore {
     }
 
     pub fn replace_seed(&self, name: &str, entropy: &[u8]) -> Result<(), std::io::Error> {
+        // the new entropy is a different wallet, so accounts attached to this name (and
+        // the account selection) are stale — drop them along with the old seed
+        self.pddb.delete_key(ACCOUNTS_DICT, name, None).ok();
+        self.pddb.delete_key(ACCOUNT_SELECT_DICT, name, None).ok();
         // PDDB keys don't truncate on rewrite; delete-then-recreate is the overwrite idiom
         self.pddb.delete_key(SEED_DICT, name, None)?;
         self.store_seed(name, entropy)
