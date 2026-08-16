@@ -12,7 +12,7 @@ pub const MAX_SEED_NAME_LEN: usize = 94;
 pub const MAX_ACCOUNT_INDEX: u32 = 0x7fff_ffff;
 pub const MAX_ACCOUNT_NAME_LEN: usize = 60;
 
-/// A BIP-44 account under the selected seed: m/44'/60'/index'/0'/address_index
+/// A BIP-44 account under the selected seed: m/44'/60'/index'/0/address_index
 #[derive(Clone, Debug)]
 pub struct Account {
     pub index: u32,
