@@ -126,7 +126,13 @@ pub enum UrEvent {
         received: usize,
         total: usize,
     },
-    /// Duplicate or mixed fountain part; nothing changed, keep scanning.
+    /// This pure part was already scanned; the sender needs to advance.
+    Duplicate {
+        part: usize,
+        received: usize,
+        total: usize,
+    },
+    /// Mixed fountain part; nothing we can use, keep scanning.
     Ignored,
     /// The full message has been reassembled and its CRC verified.
     Complete {
@@ -222,7 +228,11 @@ impl UrDecoder {
         }
         let slot = &mut self.fragments[part.seq_num - 1];
         if slot.is_some() {
-            return Ok(UrEvent::Ignored);
+            return Ok(UrEvent::Duplicate {
+                part: part.seq_num,
+                received: self.received,
+                total: self.seq_len,
+            });
         }
         *slot = Some(part.data);
         self.received += 1;
@@ -287,7 +297,7 @@ mod tests {
     fn multi_part_out_of_order_with_duplicates() {
         let mut d = UrDecoder::new();
         assert!(matches!(d.receive(PARTS[1]), UrEvent::Part { received: 1, total: 3 }));
-        assert!(matches!(d.receive(PARTS[1]), UrEvent::Ignored)); // duplicate
+        assert!(matches!(d.receive(PARTS[1]), UrEvent::Duplicate { part: 2, received: 1, total: 3 }));
         assert!(matches!(d.receive(PARTS[0]), UrEvent::Part { received: 2, total: 3 }));
         match d.receive(PARTS[2]) {
             UrEvent::Complete { ur_type, message } => {

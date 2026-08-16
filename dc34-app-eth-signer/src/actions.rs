@@ -464,8 +464,21 @@ impl ActionManager {
                         )
                         .ok();
                 }
+                UrEvent::Duplicate { part, received, total } => {
+                    // the notification blocks on a keypress, so the camera isn't nagged
+                    // by the same code sitting in front of it
+                    self.modals
+                        .show_notification(
+                            &format!(
+                                "Part {} already scanned\n({}/{} received).\nShow the next part,\nthen press any key.",
+                                part, received, total
+                            ),
+                            None,
+                        )
+                        .ok();
+                }
                 UrEvent::Ignored => {
-                    // same (or unusable) code still in front of the camera; breathe, rescan
+                    // unusable (mixed) part in front of the camera; breathe, rescan
                     self.tt.sleep_ms(250).ok();
                 }
                 UrEvent::Error(e) => {
