@@ -14,6 +14,21 @@ const BYTEWORDS: &str = "ableacidalsoapexaquaarchatomauntawayaxisbackbaldbarnbel
 const MAX_MESSAGE_LEN: usize = 8192;
 const MAX_SEQ_LEN: usize = 256;
 
+/// Encode a message as a single-part UR, uppercase so the QR encoder can use
+/// the efficient alphanumeric mode.
+pub fn ur_encode_single(ur_type: &str, message: &[u8]) -> String {
+    let bw = BYTEWORDS.as_bytes();
+    let mut out = String::with_capacity(4 + ur_type.len() + (message.len() + 4) * 2);
+    out.push_str("UR:");
+    out.push_str(&ur_type.to_ascii_uppercase());
+    out.push('/');
+    for &b in message.iter().chain(crc32(message).to_be_bytes().iter()) {
+        out.push(bw[b as usize * 4].to_ascii_uppercase() as char);
+        out.push(bw[b as usize * 4 + 3].to_ascii_uppercase() as char);
+    }
+    out
+}
+
 pub fn crc32(data: &[u8]) -> u32 {
     let mut crc = 0xffff_ffffu32;
     for &b in data {
@@ -267,6 +282,21 @@ mod tests {
     ];
     const EXPECTED_PREFIX: [u8; 8] = [0xa7, 0x01, 0xd8, 0x25, 0x50, 0x42, 0x42, 0x42];
     const EXPECTED_LEN: usize = 95;
+
+    #[test]
+    fn encode_single_roundtrip() {
+        let message = [0xa5u8, 0x01, 0x02, 0x03, 0x80, 0xff, 0x00, 0x42];
+        let encoded = ur_encode_single("crypto-hdkey", &message);
+        assert!(encoded.starts_with("UR:CRYPTO-HDKEY/"));
+        let mut d = UrDecoder::new();
+        match d.receive(&encoded) {
+            UrEvent::Complete { ur_type, message: m } => {
+                assert_eq!(ur_type, "crypto-hdkey");
+                assert_eq!(m, message);
+            }
+            _ => panic!("expected completion"),
+        }
+    }
 
     #[test]
     fn crc32_reference() {

@@ -32,10 +32,8 @@ fn main() -> ! {
     let gfx = Gfx::new(&xns).unwrap();
     let tt = ticktimer_server::Ticktimer::new().unwrap();
 
-    // seed and account selected for use by the (future) signing flow; shared with the
-    // actions thread
+    // seed selected for use by the signing flow; shared with the actions thread
     let selected_seed = Arc::new(Mutex::new(None::<String>));
-    let selected_account = Arc::new(Mutex::new(None::<storage::Account>));
     // true while the actions thread has a modal flow in progress
     let action_active = Arc::new(AtomicBool::new(false));
 
@@ -43,13 +41,7 @@ fn main() -> ! {
 
     let actions_sid = xous::create_server().unwrap();
     let actions_conn = xous::connect(actions_sid).unwrap();
-    actions::spawn_actions(
-        conn,
-        actions_sid,
-        selected_seed.clone(),
-        selected_account.clone(),
-        action_active.clone(),
-    );
+    actions::spawn_actions(conn, actions_sid, selected_seed.clone(), action_active.clone());
 
     let menu_sid = xous::create_server().unwrap();
     let menu_mgr = build_menu(conn, actions_conn, menu_sid);
@@ -129,11 +121,11 @@ fn main() -> ! {
             Some(MainOp::ConsoleSkipKey) => skip_next_key = true,
             Some(MainOp::MenuDone) => {
                 menu_active = false;
-                draw_status(&gfx, &status_line(&selected_seed, &selected_account));
+                draw_status(&gfx, &status_line(&selected_seed));
             }
             Some(MainOp::Redraw) => {
                 if !menu_active && !action_active.load(Ordering::SeqCst) {
-                    draw_status(&gfx, &status_line(&selected_seed, &selected_account));
+                    draw_status(&gfx, &status_line(&selected_seed));
                 }
             }
             Some(MainOp::Quit) => {
@@ -215,15 +207,9 @@ fn build_menu(main_conn: xous::CID, actions_conn: xous::CID, menu_sid: xous::SID
         .expect("couldn't create MenuMatic manager")
 }
 
-fn status_line(
-    selected_seed: &Arc<Mutex<Option<String>>>,
-    selected_account: &Arc<Mutex<Option<storage::Account>>>,
-) -> String {
+fn status_line(selected_seed: &Arc<Mutex<Option<String>>>) -> String {
     match selected_seed.lock().unwrap().as_deref() {
-        Some(seed) => match selected_account.lock().unwrap().as_ref() {
-            Some(account) => format!("Seed: {}\nAcct: {}", seed, account.name),
-            None => format!("Seed: {}\nno account", seed),
-        },
+        Some(seed) => format!("Seed: {}", seed),
         None => String::from("no seed selected"),
     }
 }

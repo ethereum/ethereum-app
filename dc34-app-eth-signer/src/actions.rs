@@ -13,9 +13,16 @@ use num_traits::*;
 use ux_api::widgets::TextEntryPayload;
 use xous::{Message, send_message};
 
+use signer_core::request::{ChildNumber, DerivationPath};
+use signer_signing::AccountKey;
+
 use crate::api::{ActionOp, MainOp};
 use crate::storage::{Account, MAX_ACCOUNT_INDEX, MAX_ACCOUNT_NAME_LEN, MAX_SEED_NAME_LEN, SeedStore};
-use crate::ur::{UrDecoder, UrEvent};
+use crate::ur::{UrDecoder, UrEvent, ur_encode_single};
+
+/// How many addresses (indexes 0..N at change 0) are derived when verifying
+/// whether a scanned address belongs to an account.
+const ADDRESS_SCAN_COUNT: u32 = 50;
 
 const GENERATE_ENTRY: &str = "[ Generate new seed ]";
 const IMPORT_ENTRY: &str = "[ Import seed ]";
@@ -27,11 +34,10 @@ pub fn spawn_actions(
     main_conn: xous::CID,
     sid: xous::SID,
     selected_seed: Arc<Mutex<Option<String>>>,
-    selected_account: Arc<Mutex<Option<Account>>>,
     action_active: Arc<AtomicBool>,
 ) {
     let _ = thread::spawn(move || {
-        let mut manager = ActionManager::new(main_conn, selected_seed, selected_account, action_active);
+        let mut manager = ActionManager::new(main_conn, selected_seed, action_active);
         loop {
             let msg = xous::receive_message(sid).unwrap();
             let opcode: Option<ActionOp> = FromPrimitive::from_usize(msg.body.id());
@@ -87,7 +93,6 @@ struct ActionManager {
     tt: ticktimer_server::Ticktimer,
     main_conn: xous::CID,
     selected_seed: Arc<Mutex<Option<String>>>,
-    selected_account: Arc<Mutex<Option<Account>>>,
     action_active: Arc<AtomicBool>,
     /// last fully received eth-sign-request CBOR; consumed by the signing milestone
     #[allow(dead_code)]
@@ -98,7 +103,6 @@ impl ActionManager {
     fn new(
         main_conn: xous::CID,
         selected_seed: Arc<Mutex<Option<String>>>,
-        selected_account: Arc<Mutex<Option<Account>>>,
         action_active: Arc<AtomicBool>,
     ) -> Self {
         let xns = xous_names::XousNames::new().unwrap();
@@ -110,7 +114,6 @@ impl ActionManager {
             tt: ticktimer_server::Ticktimer::new().unwrap(),
             main_conn,
             selected_seed,
-            selected_account,
             action_active,
             pending_request: None,
         }
@@ -134,10 +137,8 @@ impl ActionManager {
         self.modals.get_radiobutton(prompt).ok()
     }
 
-    /// Make `name` the active seed, both in shared state and persistently. The account
-    /// selection switches to whatever was persisted for that seed.
+    /// Make `name` the active seed, both in shared state and persistently.
     fn select_and_persist(&self, name: &str) {
-        *self.selected_account.lock().unwrap() = self.store.load_selected_account(name);
         *self.selected_seed.lock().unwrap() = Some(name.to_string());
         if let Err(e) = self.store.save_selected_seed(name) {
             // selection still works for this session; only the persistence failed
@@ -150,7 +151,6 @@ impl ActionManager {
         // restore the last selection silently; the menu can change it at any time
         if let Some(name) = self.store.load_selected_seed() {
             log::info!("restored persisted seed selection '{}'", name);
-            *self.selected_account.lock().unwrap() = self.store.load_selected_account(&name);
             *self.selected_seed.lock().unwrap() = Some(name);
             return;
         }
@@ -295,26 +295,15 @@ impl ActionManager {
                 return;
             }
         };
-        match self.radio("Accounts", &["Select account", "New account", "Delete account"]).as_deref() {
-            Some("Select account") => self.select_account_flow(&seed),
+        match self.radio("Accounts", &["Display accounts", "New account", "Delete account"]).as_deref() {
+            Some("Display accounts") => self.display_accounts_flow(&seed),
             Some("New account") => self.create_account_flow(&seed),
             Some("Delete account") => self.delete_account_flow(&seed),
             _ => {} // user aborted
         }
     }
 
-    /// Make `account` the active account for `seed`, both in shared state and persistently.
-    fn set_account(&self, seed: &str, account: Account, verb: &str) {
-        if let Err(e) = self.store.save_selected_account(seed, account.index) {
-            log::error!("couldn't persist account selection: {:?}", e);
-        }
-        self.modals
-            .show_notification(&format!("Account '{}'\n{}\n{}", account.name, account.path(), verb), None)
-            .ok();
-        *self.selected_account.lock().unwrap() = Some(account);
-    }
-
-    fn select_account_flow(&mut self, seed: &str) {
+    fn display_accounts_flow(&mut self, seed: &str) {
         let accounts = self.store.list_accounts(seed);
         if accounts.is_empty() {
             if let Some("Create account") =
@@ -327,10 +316,10 @@ impl ActionManager {
         for a in accounts.iter() {
             self.modals.add_list_item(&a.display()).ok();
         }
-        match self.modals.get_radiobutton("Select account") {
+        match self.modals.get_radiobutton("Display accounts") {
             Ok(sel) => {
                 if let Some(a) = accounts.iter().find(|a| a.display() == sel) {
-                    self.set_account(seed, a.clone(), "selected");
+                    self.account_actions_flow(seed, &a.clone());
                 }
             }
             Err(_) => {} // user aborted
@@ -363,7 +352,14 @@ impl ActionManager {
         let account = Account { index, name };
         // uniqueness is re-checked inside add_account, so a race with nothing can't corrupt
         match self.store.add_account(seed, account.clone()) {
-            Ok(()) => self.set_account(seed, account, "created and selected"),
+            Ok(()) => {
+                self.modals
+                    .show_notification(
+                        &format!("Account '{}'\n{}\ncreated", account.name, account.path()),
+                        None,
+                    )
+                    .ok();
+            }
             Err(e) => {
                 self.modals.show_notification(&format!("Error saving account:\n{:?}", e), None).ok();
             }
@@ -393,11 +389,6 @@ impl ActionManager {
         {
             Some("Delete account") => match self.store.delete_account(seed, victim.index) {
                 Ok(()) => {
-                    let mut selected = self.selected_account.lock().unwrap();
-                    if selected.as_ref().map(|a| a.index) == Some(victim.index) {
-                        *selected = None;
-                    }
-                    drop(selected);
                     self.modals.show_notification(&format!("Account '{}' deleted", victim.name), None).ok();
                 }
                 Err(e) => {
@@ -515,6 +506,196 @@ impl ActionManager {
             Err(_) => default,
         }
     }
+
+    /// BIP-44 account-level derivation path m/44'/60'/index'.
+    fn account_derivation_path(account: &Account) -> DerivationPath {
+        DerivationPath {
+            components: vec![
+                ChildNumber { index: 44, hardened: true },
+                ChildNumber { index: 60, hardened: true },
+                ChildNumber { index: account.index, hardened: true },
+            ],
+        }
+    }
+
+    /// Derive the account-level extended key. The BIP-39 seed stretch is slow, so a
+    /// "deriving" notice is shown while it runs; the entropy is wiped afterwards.
+    fn account_key(&self, seed: &str, account: &Account) -> Option<AccountKey> {
+        let mut entropy = match self.store.read_seed(seed) {
+            Some(e) => e,
+            None => {
+                self.modals.show_notification("Could not read the seed", None).ok();
+                return None;
+            }
+        };
+        self.modals.dynamic_notification(Some("Deriving keys..."), None).ok();
+        let key = AccountKey::from_entropy(&entropy, &Self::account_derivation_path(account));
+        zeroize(&mut entropy);
+        self.modals.dynamic_notification_close().ok();
+        match key {
+            Ok(k) => Some(k),
+            Err(e) => {
+                self.modals.show_notification(&format!("Derivation error:\n{:?}", e), None).ok();
+                None
+            }
+        }
+    }
+
+    /// Per-account operations, entered by picking an account in "Display accounts".
+    fn account_actions_flow(&mut self, seed: &str, account: &Account) {
+        loop {
+            match self
+                .radio(
+                    &format!("'{}' ({})", account.name, account.path()),
+                    &["Connect wallet", "Verify address", "List addresses", "Back"],
+                )
+                .as_deref()
+            {
+                Some("Connect wallet") => self.connect_wallet_flow(seed, account),
+                Some("Verify address") => self.verify_address_flow(seed, account),
+                Some("List addresses") => self.list_addresses_flow(seed, account),
+                _ => return,
+            }
+        }
+    }
+
+    /// Show the ERC-4527 crypto-hdkey (account xpub) as a QR for a watch-only wallet.
+    fn connect_wallet_flow(&mut self, seed: &str, account: &Account) {
+        let Some(key) = self.account_key(seed, account) else { return };
+        let hdkey = signer_decoding::encode_crypto_hdkey(
+            &key.public_key_bytes(),
+            &key.chain_code(),
+            &Self::account_derivation_path(account),
+            key.master_fingerprint(),
+            Some(&account.name),
+            Some("dc34-eth-signer"),
+        );
+        let ur = ur_encode_single("crypto-hdkey", &hdkey);
+        log::info!("crypto-hdkey UR ({} chars): {}", ur.len(), ur);
+        self.modals.show_notification(&format!("Scan with wallet:\n'{}'", account.name), None).ok();
+        // empty caption gives the QR the full panel height
+        self.modals.show_notification("", Some(&ur)).ok();
+    }
+
+    /// Scan an address QR and check it against the first ADDRESS_SCAN_COUNT
+    /// addresses of this account.
+    fn verify_address_flow(&mut self, seed: &str, account: &Account) {
+        self.modals.show_notification("Show the address QR\nto the camera", None).ok();
+        let target = loop {
+            let acquisition = match self.gfx.acquire_qr() {
+                Ok(a) => a,
+                Err(e) => {
+                    self.modals.show_notification(&format!("Camera error:\n{:?}", e), None).ok();
+                    return;
+                }
+            };
+            let Some(content) = acquisition.content else { return }; // key press = abort
+            match parse_eth_address(&content) {
+                Some(addr) => break addr,
+                None => {
+                    self.modals
+                        .show_notification("Not an Ethereum address.\nTry another QR code.", None)
+                        .ok();
+                }
+            }
+        };
+        let Some(key) = self.account_key(seed, account) else { return };
+        self.modals.dynamic_notification(Some("Verifying address..."), None).ok();
+        let mut found = None;
+        for index in 0..ADDRESS_SCAN_COUNT {
+            match key.address(0, index) {
+                Ok(addr) if addr.as_slice() == target => {
+                    found = Some(index);
+                    break;
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    log::error!("derivation error at index {}: {:?}", index, e);
+                    break;
+                }
+            }
+        }
+        self.modals.dynamic_notification_close().ok();
+        match found {
+            Some(index) => {
+                self.modals
+                    .show_notification(
+                        &format!("Address belongs to\n'{}'\n{}/0/{}", account.name, account.path(), index),
+                        None,
+                    )
+                    .ok();
+            }
+            None => {
+                self.modals
+                    .show_notification(
+                        &format!(
+                            "NOT an address of\n'{}'\n(first {} checked)",
+                            account.name, ADDRESS_SCAN_COUNT
+                        ),
+                        None,
+                    )
+                    .ok();
+            }
+        }
+    }
+
+    /// Walk the account's addresses from index 0: show index + readable address,
+    /// then its QR, then let the user continue or exit.
+    fn list_addresses_flow(&mut self, seed: &str, account: &Account) {
+        let Some(key) = self.account_key(seed, account) else { return };
+        let mut index: u32 = 0;
+        loop {
+            let address = match key.address(0, index) {
+                Ok(a) => a,
+                Err(e) => {
+                    self.modals.show_notification(&format!("Derivation error:\n{:?}", e), None).ok();
+                    return;
+                }
+            };
+            let checksummed = address.to_checksum(None);
+            // 0x + 40 hex chars, grouped 8 per line for readability
+            let mut grouped = String::from("0x");
+            for (i, c) in checksummed[2..].chars().enumerate() {
+                if i > 0 && i % 8 == 0 {
+                    grouped.push('\n');
+                }
+                grouped.push(c);
+            }
+            self.modals
+                .show_notification(&format!("Address {}/0/{}\n{}", account.path(), index, grouped), None)
+                .ok();
+            // empty caption gives the QR the full panel height
+            self.modals.show_notification("", Some(&checksummed)).ok();
+            match self
+                .radio(&format!("Address index {}", index), &["Next address", "Show again", "Exit"])
+                .as_deref()
+            {
+                Some("Next address") => index += 1,
+                Some("Show again") => {}
+                _ => return,
+            }
+        }
+    }
+}
+
+/// Accept "0x<40 hex>" (any case), optionally wrapped as an EIP-681
+/// "ethereum:0x..." URI; returns the raw 20 bytes.
+fn parse_eth_address(text: &str) -> Option<[u8; 20]> {
+    let t = text.trim();
+    let t = t.strip_prefix("ethereum:").unwrap_or(t);
+    let hex_part = t.strip_prefix("0x").or_else(|| t.strip_prefix("0X"))?;
+    // EIP-681 may append @chain_id or query params
+    let hex_part = hex_part.split(|c: char| c == '@' || c == '?' || c == '/').next()?;
+    if hex_part.len() != 40 || !hex_part.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    let mut out = [0u8; 20];
+    for (i, chunk) in hex_part.as_bytes().chunks_exact(2).enumerate() {
+        let hi = (chunk[0] as char).to_digit(16)?;
+        let lo = (chunk[1] as char).to_digit(16)?;
+        out[i] = ((hi << 4) | lo) as u8;
+    }
+    Some(out)
 }
 
 fn account_number_validator(input: &TextEntryPayload) -> Option<String> {

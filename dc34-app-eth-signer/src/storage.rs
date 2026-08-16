@@ -6,8 +6,6 @@ pub const CONFIG_DICT: &str = "eth.signer.config";
 const SELECTED_SEED_KEY: &str = "selected_seed";
 /// BIP-44 accounts: key = seed name, value = one "index:name" line per account
 pub const ACCOUNTS_DICT: &str = "eth.signer.accounts";
-/// Selected account per seed: key = seed name, value = decimal account index
-pub const ACCOUNT_SELECT_DICT: &str = "eth.signer.acctsel";
 /// PDDB rejects key names of KEY_NAME_LEN (95) bytes or more
 pub const MAX_SEED_NAME_LEN: usize = 94;
 /// Hardened BIP-32 child indices span [0, 2^31)
@@ -66,10 +64,9 @@ impl SeedStore {
     }
 
     pub fn replace_seed(&self, name: &str, entropy: &[u8]) -> Result<(), std::io::Error> {
-        // the new entropy is a different wallet, so accounts attached to this name (and
-        // the account selection) are stale — drop them along with the old seed
+        // the new entropy is a different wallet, so accounts attached to this name
+        // are stale — drop them along with the old seed
         self.pddb.delete_key(ACCOUNTS_DICT, name, None).ok();
-        self.pddb.delete_key(ACCOUNT_SELECT_DICT, name, None).ok();
         // PDDB keys don't truncate on rewrite; delete-then-recreate is the overwrite idiom
         self.pddb.delete_key(SEED_DICT, name, None)?;
         self.store_seed(name, entropy)
@@ -140,35 +137,15 @@ impl SeedStore {
         self.write_accounts(seed, &accounts)
     }
 
-    /// Removes the account; also drops the persisted selection if it pointed at it.
     pub fn delete_account(&self, seed: &str, index: u32) -> Result<(), std::io::Error> {
         let mut accounts = self.list_accounts(seed);
         accounts.retain(|a| a.index != index);
-        if self.load_selected_account_index(seed) == Some(index) {
-            self.pddb.delete_key(ACCOUNT_SELECT_DICT, seed, None).ok();
-        }
         if accounts.is_empty() {
             self.pddb.delete_key(ACCOUNTS_DICT, seed, None).ok();
             self.pddb.sync()
         } else {
             self.write_accounts(seed, &accounts)
         }
-    }
-
-    fn load_selected_account_index(&self, seed: &str) -> Option<u32> {
-        let data = self.read_value(ACCOUNT_SELECT_DICT, seed)?;
-        String::from_utf8_lossy(&data).trim().parse().ok()
-    }
-
-    /// The persisted account selection for this seed, or None if nothing was persisted
-    /// or the account no longer exists.
-    pub fn load_selected_account(&self, seed: &str) -> Option<Account> {
-        let index = self.load_selected_account_index(seed)?;
-        self.list_accounts(seed).into_iter().find(|a| a.index == index)
-    }
-
-    pub fn save_selected_account(&self, seed: &str, index: u32) -> Result<(), std::io::Error> {
-        self.write_value(ACCOUNT_SELECT_DICT, seed, index.to_string().as_bytes())
     }
 
     /// Returns the persisted selection, or None if nothing was persisted or the named
@@ -195,7 +172,6 @@ impl SeedStore {
         self.write_value(CONFIG_DICT, SELECTED_SEED_KEY, name.as_bytes())
     }
 
-    #[allow(dead_code)] // consumed by the upcoming signing milestone
     pub fn read_seed(&self, name: &str) -> Option<Vec<u8>> {
         let mut key = self.pddb.get(SEED_DICT, name, None, false, false, None, None::<fn()>).ok()?;
         let mut data = Vec::new();

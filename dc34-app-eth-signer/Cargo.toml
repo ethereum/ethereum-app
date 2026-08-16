@@ -14,6 +14,11 @@ ticktimer-server = { package = "xous-api-ticktimer", version = "0.9.70" }
 # protocol constants for dc34-console (power manager / watchdog handshake, server name)
 dc34-api = { path = "../dc34-api" }
 
+# Ethereum signing stack (BIP-39/32 derivation, ERC-4527 CBOR codecs)
+signer-core = { path = "../common-eth-signer/crates/core" }
+signer-signing = { path = "../common-eth-signer/crates/signing" }
+signer-decoding = { path = "../common-eth-signer/crates/decoding" }
+
 pddb = { git = "https://github.com/betrusted-io/xous-core", rev = "616bf65f6e379165464f50b1e79ec42aff77a683" }
 modals = { git = "https://github.com/betrusted-io/xous-core", rev = "616bf65f6e379165464f50b1e79ec42aff77a683", features = [
     "no-gam",
