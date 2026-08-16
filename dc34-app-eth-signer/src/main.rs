@@ -1,6 +1,7 @@
 mod actions;
 mod api;
 mod storage;
+mod ur;
 
 use std::fmt::Write as _;
 use std::sync::{
@@ -114,6 +115,13 @@ fn main() -> ! {
                 } else if k == '∴' {
                     menu_mgr.redraw();
                     menu_active = true;
+                } else if k == '🔥' {
+                    // center button: shortcut straight into request scanning
+                    send_message(
+                        actions_conn,
+                        Message::new_scalar(ActionOp::ScanRequest.to_usize().unwrap(), 0, 0, 0, 0),
+                    )
+                    .ok();
                 } else {
                     log::trace!("ignoring key {:?}", k);
                 }
@@ -188,6 +196,7 @@ fn ensure_swap_encryption(xns: &xous_names::XousNames, power_server: xous::CID) 
 fn build_menu(main_conn: xous::CID, actions_conn: xous::CID, menu_sid: xous::SID) -> MenuMatic {
     let mut items = Vec::<MenuItem>::new();
     for (name, op) in [
+        ("Scan request", ActionOp::ScanRequest),
         ("Select seed", ActionOp::SelectSeed),
         ("New seed", ActionOp::CreateSeed),
         ("Import seed", ActionOp::ImportSeed),

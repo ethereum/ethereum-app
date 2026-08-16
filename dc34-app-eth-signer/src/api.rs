@@ -32,6 +32,8 @@ pub enum ActionOp {
     ImportSeed,
     /// Account operations submenu (select / create / delete) for the selected seed
     AccountMenu,
+    /// Scan an ERC-4527 eth-sign-request via the camera (single or multi-part UR)
+    ScanRequest,
     /// Dummy activate/deactivate cycle so the status screen under the menu gets redrawn
     MenuClose,
     Quit,

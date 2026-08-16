@@ -15,6 +15,7 @@ use xous::{Message, send_message};
 
 use crate::api::{ActionOp, MainOp};
 use crate::storage::{Account, MAX_ACCOUNT_INDEX, MAX_ACCOUNT_NAME_LEN, MAX_SEED_NAME_LEN, SeedStore};
+use crate::ur::{UrDecoder, UrEvent};
 
 const GENERATE_ENTRY: &str = "[ Generate new seed ]";
 const IMPORT_ENTRY: &str = "[ Import seed ]";
@@ -61,6 +62,11 @@ pub fn spawn_actions(
                     manager.account_menu_flow();
                     manager.deactivate();
                 }
+                Some(ActionOp::ScanRequest) => {
+                    manager.activate();
+                    manager.scan_request_flow();
+                    manager.deactivate();
+                }
                 Some(ActionOp::MenuClose) => {
                     manager.activate();
                     manager.deactivate();
@@ -77,10 +83,15 @@ struct ActionManager {
     modals: modals::Modals,
     store: SeedStore,
     trng: RefCell<Trng>,
+    gfx: ux_api::service::gfx::Gfx,
+    tt: ticktimer_server::Ticktimer,
     main_conn: xous::CID,
     selected_seed: Arc<Mutex<Option<String>>>,
     selected_account: Arc<Mutex<Option<Account>>>,
     action_active: Arc<AtomicBool>,
+    /// last fully received eth-sign-request CBOR; consumed by the signing milestone
+    #[allow(dead_code)]
+    pending_request: Option<Vec<u8>>,
 }
 
 impl ActionManager {
@@ -95,10 +106,13 @@ impl ActionManager {
             modals: modals::Modals::new(&xns).unwrap(),
             store: SeedStore::new(),
             trng: RefCell::new(Trng::new(&xns).unwrap()),
+            gfx: ux_api::service::gfx::Gfx::new(&xns).unwrap(),
+            tt: ticktimer_server::Ticktimer::new().unwrap(),
             main_conn,
             selected_seed,
             selected_account,
             action_active,
+            pending_request: None,
         }
     }
 
@@ -391,6 +405,76 @@ impl ActionManager {
                 }
             },
             _ => {}
+        }
+    }
+
+    /// Receive an ERC-4527 eth-sign-request from the camera, part by part.
+    /// Completion is detected automatically once every part has been seen; the
+    /// user is prompted to advance the sender after each new part.
+    pub fn scan_request_flow(&mut self) {
+        let mut decoder = UrDecoder::new();
+        loop {
+            let acquisition = match self.gfx.acquire_qr() {
+                Ok(a) => a,
+                Err(e) => {
+                    self.modals.show_notification(&format!("Camera error:\n{:?}", e), None).ok();
+                    return;
+                }
+            };
+            let Some(content) = acquisition.content else {
+                // a key press aborted the acquisition
+                if !decoder.in_progress() {
+                    return;
+                }
+                let (received, total) = decoder.progress();
+                match self
+                    .radio(
+                        &format!("Scan paused ({}/{} parts)", received, total),
+                        &["Keep scanning", "Abort"],
+                    )
+                    .as_deref()
+                {
+                    Some("Keep scanning") => continue,
+                    _ => return,
+                }
+            };
+            match decoder.receive(&content) {
+                UrEvent::Complete { ur_type, message } => {
+                    if ur_type != "eth-sign-request" {
+                        self.modals
+                            .show_notification(&format!("Unsupported UR type:\n{}", ur_type), None)
+                            .ok();
+                        return;
+                    }
+                    self.modals
+                        .show_notification(&format!("Sign request received\n({} bytes)", message.len()), None)
+                        .ok();
+                    log::info!("eth-sign-request received: {} bytes", message.len());
+                    self.pending_request = Some(message);
+                    return;
+                }
+                UrEvent::Part { received, total } => {
+                    self.modals
+                        .show_notification(
+                            &format!(
+                                "Part {}/{} received.\nShow the next part,\nthen press any key.",
+                                received, total
+                            ),
+                            None,
+                        )
+                        .ok();
+                }
+                UrEvent::Ignored => {
+                    // same (or unusable) code still in front of the camera; breathe, rescan
+                    self.tt.sleep_ms(250).ok();
+                }
+                UrEvent::Error(e) => {
+                    self.modals.show_notification(&format!("QR error:\n{}", e), None).ok();
+                    if !decoder.in_progress() {
+                        return;
+                    }
+                }
+            }
         }
     }
 
