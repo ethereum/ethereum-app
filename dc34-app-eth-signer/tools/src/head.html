@@ -112,12 +112,18 @@
     background: #fff;
     border-radius: 12px;
     padding: 12px;
-    width: 92vw; max-width: 480px;
+    width: fit-content;
+    max-width: 96vw;
     margin: 0 auto;
-    aspect-ratio: 1;
     display: flex; align-items: center; justify-content: center;
   }
-  #qr-card svg { width: 100%; height: 100%; }
+  /* canvas is sized in JS to an exact physical-pixel multiple of the module
+     size; never let CSS rescale it or the module edges go soft */
+  #qr-card canvas { display: block; image-rendering: pixelated; }
+  #qr-info { text-align: center; font-size: 13px; color: var(--muted); margin-top: 4px; }
+  #qr-size-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+  #qr-size-row input[type="range"] { flex: 1; }
+  #qr-size-label { font-size: 14px; color: var(--muted); min-width: 64px; text-align: right; }
   #part-label { text-align: center; font-size: 20px; font-weight: 700; margin: 10px 0 2px; }
   #ur-text {
     font-family: ui-monospace, Menlo, Consolas, monospace;
@@ -212,6 +218,12 @@
     <div id="display-main" style="display:none">
       <div class="hint" id="display-source" style="margin-bottom:8px"></div>
       <div id="qr-card"></div>
+      <div id="qr-info"></div>
+      <div id="qr-size-row">
+        <label for="qr-size" style="margin:0">QR size</label>
+        <input type="range" id="qr-size" min="200" max="1000" step="10" value="480">
+        <span id="qr-size-label">480 px</span>
+      </div>
       <div id="part-label">Part 1 of 1</div>
       <div id="ur-text"></div>
       <div class="nav-row">
@@ -223,7 +235,8 @@
           <label>Fragment size (bytes)</label>
           <select id="frag-size">
             <option>25</option><option>40</option><option>60</option><option selected>80</option>
-            <option>100</option><option>130</option><option>160</option><option>200</option>
+            <option>100</option><option>120</option><option>140</option><option>160</option>
+            <option>180</option><option>200</option>
           </select>
         </div>
         <div>

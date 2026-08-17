@@ -237,6 +237,47 @@
     renderPart();
   }
 
+
+  var QUIET_MODULES = 4;
+
+  // Draw the QR on a canvas whose backing store is an exact integer number of
+  // PHYSICAL pixels per module (accounting for devicePixelRatio), so module
+  // edges stay razor sharp on screen. Fractional CSS scaling of an SVG
+  // antialiases the edges, which measurably hurts dense codes when a slow
+  // hardware camera scans the monitor.
+  function drawQrCanvas(qr) {
+    var modules = qr.getModuleCount();
+    var total = modules + 2 * QUIET_MODULES;
+    var dpr = window.devicePixelRatio || 1;
+    var targetCss = Math.min(parseInt($('qr-size').value, 10),
+                             Math.floor(window.innerWidth * 0.92) - 24);
+    var targetDev = Math.floor(targetCss * dpr);
+    var px = Math.max(2, Math.floor(targetDev / total)); // physical px per module
+    var sizeDev = total * px;
+
+    var canvas = document.createElement('canvas');
+    canvas.width = sizeDev;
+    canvas.height = sizeDev;
+    canvas.style.width = (sizeDev / dpr) + 'px';
+    canvas.style.height = (sizeDev / dpr) + 'px';
+    var ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, sizeDev, sizeDev);
+    ctx.fillStyle = '#000';
+    for (var r = 0; r < modules; r++) {
+      for (var c = 0; c < modules; c++) {
+        if (qr.isDark(r, c)) {
+          ctx.fillRect((c + QUIET_MODULES) * px, (r + QUIET_MODULES) * px, px, px);
+        }
+      }
+    }
+    var card = $('qr-card');
+    card.innerHTML = '';
+    card.appendChild(canvas);
+    $('qr-info').textContent = modules + '\u00d7' + modules + ' modules \u00b7 '
+      + px + ' physical px/module \u00b7 ' + (px / dpr).toFixed(2) + ' css px/module';
+  }
+
   function renderPart() {
     if (!parts.length) return;
     var text = parts[partIndex];
@@ -250,7 +291,7 @@
       qr.addData(text, 'Byte');
       qr.make();
     }
-    $('qr-card').innerHTML = qr.createSvgTag({ cellSize: 4, margin: 4, scalable: true });
+    drawQrCanvas(qr);
     $('part-label').textContent = parts.length === 1
       ? 'Single part' : 'Part ' + (partIndex + 1) + ' of ' + parts.length;
     $('ur-text').textContent = text;
@@ -266,7 +307,24 @@
 
   $('btn-prev').onclick = function () { step(-1); };
   $('btn-next').onclick = function () { step(1); };
-  $('frag-size').onchange = regenerateParts;
+  $('frag-size').onchange = function () {
+    try { localStorage.setItem('urbridge.fragSize', $('frag-size').value); } catch (e) {}
+    regenerateParts();
+  };
+  $('qr-size').oninput = function () {
+    $('qr-size-label').textContent = $('qr-size').value + ' px';
+    try { localStorage.setItem('urbridge.qrSize', $('qr-size').value); } catch (e) {}
+    renderPart();
+  };
+  window.addEventListener('resize', function () { renderPart(); });
+  // restore persisted knobs
+  try {
+    var savedFrag = localStorage.getItem('urbridge.fragSize');
+    if (savedFrag) $('frag-size').value = savedFrag;
+    var savedSize = localStorage.getItem('urbridge.qrSize');
+    if (savedSize) $('qr-size').value = savedSize;
+    $('qr-size-label').textContent = $('qr-size').value + ' px';
+  } catch (e) {}
 
   $('auto-advance').onchange = function () {
     if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
