@@ -88,6 +88,22 @@ def make_tx_sign_request(tx_payload: bytes, request_id_byte: int) -> bytes:
     return body
 
 
+def make_raw_sign_request(message: bytes, request_id_byte: int) -> bytes:
+    """eth-sign-request with data-type 3 (eth-raw-bytes / EIP-191), chain 1,
+    path m/44'/60'/0'/0/0 and the matching zero-entropy test-seed address."""
+    body = (
+        b"\xa7"
+        + b"\x01" + cbor_tag(37, urlib.cbor_bytes(bytes([request_id_byte]) * 16))
+        + b"\x02" + urlib.cbor_bytes(message)
+        + b"\x03" + urlib.cbor_uint(3)  # eth-raw-bytes
+        + b"\x04" + urlib.cbor_uint(1)
+        + b"\x05" + keypath_m44600_00()
+        + b"\x06" + urlib.cbor_bytes(bytes.fromhex("9858EfFD232B4033E47d90003D41EC34EcaEda94".replace("0x", "")))
+        + b"\x07" + cbor_text("UR Bridge Test")
+    )
+    return body
+
+
 def make_large_sign_request() -> bytes:
     """EIP-712 typed-data eth-sign-request large enough to need several parts."""
     typed_data = {
@@ -176,6 +192,11 @@ def main():
             "tx-eip1559-erc20",
             "EIP-1559 ERC-20 transfer call with calldata (exercises the 8213 data hash)",
             "eth-sign-request", make_tx_sign_request(TX_ERC20, 0x52), 80,
+        ),
+        vector(
+            "eip191-nonprintable",
+            "EIP-191 message with tab, control char and emoji (exercises the display warning)",
+            "eth-sign-request", make_raw_sign_request("Hi\tthere\x01 \U0001f680 end".encode(), 0x53), None,
         ),
         vector(
             "eth-signature-single",

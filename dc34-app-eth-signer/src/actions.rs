@@ -14,7 +14,9 @@ use ux_api::widgets::TextEntryPayload;
 use xous::{Message, send_message};
 
 use signer_core::alloy_primitives::{B256, U256};
-use signer_core::request::{ChildNumber, DerivationPath, MessageKind, SignRequest, TxDisplay, TypedData712};
+use signer_core::request::{
+    ChildNumber, DerivationPath, MessageKind, PersonalMessage, SignRequest, TxDisplay, TypedData712,
+};
 use signer_signing::AccountKey;
 
 use crate::api::{ActionOp, MainOp};
@@ -418,11 +420,6 @@ impl ActionManager {
                 return;
             }
         };
-        // placeholder: personal-message signing arrives in a later milestone
-        if let MessageKind::Eip191(_) = &request.message {
-            self.modals.show_notification("EIP-191 messages are\nnot supported yet", None).ok();
-            return;
-        }
         let Some(seed) = self.selected_seed.lock().unwrap().clone() else {
             self.modals.show_notification("Select a seed first", None).ok();
             return;
@@ -475,7 +472,73 @@ impl ActionManager {
                 let td = td.clone();
                 self.typed_data_menu(&request, &td, &account, &key);
             }
-            MessageKind::Eip191(_) => unreachable!("filtered above"),
+            MessageKind::Eip191(msg) => {
+                let msg = msg.clone();
+                self.eip191_menu(&request, &msg, &account, &key);
+            }
+        }
+    }
+
+    /// Review menu for an EIP-191 personal message; loops until Sign or Cancel.
+    fn eip191_menu(
+        &mut self,
+        request: &SignRequest,
+        msg: &PersonalMessage,
+        account: &Account,
+        key: &signer_signing::SigningKey,
+    ) {
+        loop {
+            match self
+                .radio(
+                    &format!("Message for '{}'", account.name),
+                    &["View message", "EIP-191 Digest", "Sign", "Cancel"],
+                )
+                .as_deref()
+            {
+                Some("View message") => self.view_personal_message(msg),
+                Some("EIP-191 Digest") => {
+                    self.show_hash("EIP-191 digest", signer_core::digest::eip191_digest(&msg.raw));
+                }
+                Some("Sign") => {
+                    self.sign_and_show(request, key);
+                    return;
+                }
+                _ => return, // Cancel or aborted
+            }
+        }
+    }
+
+    /// Scrollable view of the message text. Content that cannot be displayed
+    /// faithfully (invalid UTF-8, or control/replacement-prone characters) is
+    /// announced with a warning first, then shown sanitized — and as a hex dump
+    /// when it isn't text at all.
+    fn view_personal_message(&self, msg: &PersonalMessage) {
+        match &msg.as_utf8 {
+            Some(text) => {
+                let sanitized = sanitize_for_display(text);
+                if sanitized.replaced > 0 {
+                    self.modals
+                        .show_notification(
+                            &format!(
+                                "Warning:\n{} character(s)\ncannot be displayed\nand are shown as {}",
+                                sanitized.replaced, REPLACEMENT_CHAR
+                            ),
+                            None,
+                        )
+                        .ok();
+                }
+                self.modals.show_scrollable(Some("Message"), &wrap_rows(&sanitized.text, 16)).ok();
+            }
+            None => {
+                self.modals
+                    .show_notification(
+                        "Warning:\nmessage is not text\n(invalid UTF-8);\nshowing raw bytes",
+                        None,
+                    )
+                    .ok();
+                let hex: String = msg.raw.iter().map(|b| format!("{:02x}", b)).collect();
+                self.modals.show_scrollable(Some(&format!("{} bytes", msg.raw.len())), &group_hex(&hex)).ok();
+            }
         }
     }
 
@@ -989,6 +1052,31 @@ impl ActionManager {
             }
         }
     }
+}
+
+/// Replacement used for characters the display cannot render faithfully.
+const REPLACEMENT_CHAR: char = '?';
+
+struct Sanitized {
+    text: String,
+    replaced: usize,
+}
+
+/// Keep newlines (they become row breaks) and printable ASCII; anything else —
+/// other control characters and non-ASCII the small font may not cover — is
+/// replaced and counted so the user can be warned.
+fn sanitize_for_display(text: &str) -> Sanitized {
+    let mut out = String::with_capacity(text.len());
+    let mut replaced = 0;
+    for c in text.chars() {
+        if c == '\n' || (' '..='~').contains(&c) {
+            out.push(c);
+        } else {
+            out.push(REPLACEMENT_CHAR);
+            replaced += 1;
+        }
+    }
+    Sanitized { text: out, replaced }
 }
 
 /// One navigation step inside a JSON document.

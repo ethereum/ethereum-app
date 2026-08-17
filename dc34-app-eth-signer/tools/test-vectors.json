@@ -61,6 +61,16 @@
     ]
   },
   {
+    "name": "eip191-nonprintable",
+    "description": "EIP-191 message with tab, control char and emoji (exercises the display warning)",
+    "urType": "eth-sign-request",
+    "cborHex": "a701d8255053535353535353535353535353535353025248690974686572650120f09f9a8020656e640303040105d90130a1018a182cf5183cf500f500f400f406549858effd232b4033e47d90003d41ec34ecaeda94076e5552204272696467652054657374",
+    "maxFragmentLen": null,
+    "parts": [
+      "UR:ETH-SIGN-REQUEST/OSADTPDAGDGUGUGUGUGUGUGUGUGUGUGUGUGUGUGUGUAOGMFDINASJYISIHJPIHADCXWTNENYLACXIHJTIEAXAXAAADAHTAADDYOYADLECSDWYKCSFNYKAEYKAEWKAEWKAMGHMKHDWSZCCNDNFZEOVEKIMHAEFSFPWPEEWPPLTNMWATJTGOGMCXFWJPINIEIOIHCXGHIHJKJYBWFRSEHK"
+    ]
+  },
+  {
     "name": "eth-signature-single",
     "description": "eth-signature response (from signer-decoding encode_eth_signature)",
     "urType": "eth-signature",
