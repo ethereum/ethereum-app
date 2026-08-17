@@ -18,6 +18,7 @@ dc34-api = { path = "../dc34-api" }
 signer-core = { path = "../common-eth-signer/crates/core" }
 signer-signing = { path = "../common-eth-signer/crates/signing" }
 signer-decoding = { path = "../common-eth-signer/crates/decoding" }
+serde_json = "1"
 
 pddb = { git = "https://github.com/betrusted-io/xous-core", rev = "616bf65f6e379165464f50b1e79ec42aff77a683" }
 modals = { git = "https://github.com/betrusted-io/xous-core", rev = "616bf65f6e379165464f50b1e79ec42aff77a683", features = [

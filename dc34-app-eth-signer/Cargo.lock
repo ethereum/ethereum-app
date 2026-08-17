@@ -1382,6 +1382,7 @@ dependencies = [
  "num-derive",
  "num-traits",
  "pddb",
+ "serde_json",
  "signer-core",
  "signer-decoding",
  "signer-signing",

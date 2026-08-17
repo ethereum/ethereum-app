@@ -13,8 +13,8 @@ use num_traits::*;
 use ux_api::widgets::TextEntryPayload;
 use xous::{Message, send_message};
 
-use signer_core::alloy_primitives::U256;
-use signer_core::request::{ChildNumber, DerivationPath, MessageKind, SignRequest, TxDisplay};
+use signer_core::alloy_primitives::{B256, U256};
+use signer_core::request::{ChildNumber, DerivationPath, MessageKind, SignRequest, TxDisplay, TypedData712};
 use signer_signing::AccountKey;
 
 use crate::api::{ActionOp, MainOp};
@@ -418,18 +418,11 @@ impl ActionManager {
                 return;
             }
         };
-        let tx = match &request.message {
-            MessageKind::Transaction(tx) => tx.clone(),
-            // placeholders: message signing arrives in a later milestone
-            MessageKind::Eip191(_) => {
-                self.modals.show_notification("EIP-191 messages are\nnot supported yet", None).ok();
-                return;
-            }
-            MessageKind::Eip712(_) => {
-                self.modals.show_notification("EIP-712 typed data is\nnot supported yet", None).ok();
-                return;
-            }
-        };
+        // placeholder: personal-message signing arrives in a later milestone
+        if let MessageKind::Eip191(_) = &request.message {
+            self.modals.show_notification("EIP-191 messages are\nnot supported yet", None).ok();
+            return;
+        }
         let Some(seed) = self.selected_seed.lock().unwrap().clone() else {
             self.modals.show_notification("Select a seed first", None).ok();
             return;
@@ -473,8 +466,181 @@ impl ActionManager {
             }
         }
 
-        let display = tx.display();
-        self.transaction_menu(&request, &display, &account, from, &key);
+        match &request.message {
+            MessageKind::Transaction(tx) => {
+                let display = tx.display();
+                self.transaction_menu(&request, &display, &account, from, &key);
+            }
+            MessageKind::Eip712(td) => {
+                let td = td.clone();
+                self.typed_data_menu(&request, &td, &account, &key);
+            }
+            MessageKind::Eip191(_) => unreachable!("filtered above"),
+        }
+    }
+
+    /// Scrollable grouped-hex view of a 32-byte hash, followed by its QR code.
+    fn show_hash(&self, caption: &str, hash: B256) {
+        let hex = format!("{}", hash);
+        self.modals.show_scrollable(Some(caption), &group_hex(&hex[2..])).ok();
+        // empty caption gives the QR the full panel height
+        self.modals.show_notification("", Some(&hex)).ok();
+    }
+
+    /// Sign the request and present the eth-signature UR as a QR (re-showable).
+    fn sign_and_show(&self, request: &SignRequest, key: &signer_signing::SigningKey) {
+        match signer_signing::sign_request(request, key) {
+            Ok(signature) => {
+                let cbor = signer_decoding::encode_eth_signature(
+                    request.request_id,
+                    &signature,
+                    Some("dc34-eth-signer"),
+                );
+                let ur = ur_encode_single("eth-signature", &cbor);
+                log::info!("eth-signature UR ({} chars)", ur.len());
+                loop {
+                    self.modals.show_notification("", Some(&ur)).ok();
+                    match self.radio("Signature sent?", &["Show QR again", "Done"]).as_deref() {
+                        Some("Show QR again") => {}
+                        _ => break,
+                    }
+                }
+            }
+            Err(e) => {
+                self.modals.show_notification(&format!("Signing error:\n{:?}", e), None).ok();
+            }
+        }
+    }
+
+    /// Review menu for EIP-712 typed data; loops until Sign or Cancel.
+    fn typed_data_menu(
+        &mut self,
+        request: &SignRequest,
+        td: &TypedData712,
+        account: &Account,
+        key: &signer_signing::SigningKey,
+    ) {
+        loop {
+            match self
+                .radio(
+                    &format!("Typed data for '{}'", account.name),
+                    &["View message", "EIP-712 Digest", "Domain Hash", "Message Hash", "Sign", "Cancel"],
+                )
+                .as_deref()
+            {
+                Some("View message") => self.json_browser(&td.json),
+                Some("EIP-712 Digest") => self.show_hash("EIP-712 digest", td.eip712_digest),
+                Some("Domain Hash") => self.show_hash("Domain hash", td.domain_hash),
+                Some("Message Hash") => self.show_hash("Message hash", td.message_hash),
+                Some("Sign") => {
+                    self.sign_and_show(request, key);
+                    return;
+                }
+                _ => return, // Cancel or aborted
+            }
+        }
+    }
+
+    /// Interactive browser for a JSON document on a tiny screen: objects and
+    /// arrays are radio lists ("key: preview" entries) that drill down a level,
+    /// leaves are shown in full as scrollable wrapped text, and "[ Up ]" walks
+    /// back out. A raw (wrapped, scrollable) view of the whole document is also
+    /// offered at the top level.
+    fn json_browser(&mut self, json: &str) {
+        let root: serde_json::Value = match serde_json::from_str(json) {
+            Ok(v) => v,
+            Err(_) => {
+                // not valid JSON (shouldn't happen post-decode): show it raw
+                self.modals.show_scrollable(Some("Message"), &wrap_rows(json, 16)).ok();
+                return;
+            }
+        };
+        const UP: &str = "[ Up ]";
+        const RAW: &str = "[ Raw JSON ]";
+        const EXIT: &str = "[ Exit view ]";
+        let mut path: Vec<JsonStep> = Vec::new();
+        loop {
+            // resolve the current node
+            let mut node = &root;
+            for step in &path {
+                node = match step {
+                    JsonStep::Key(k) => &node[k.as_str()],
+                    JsonStep::Index(i) => &node[*i],
+                };
+            }
+            // build the entry list for this level
+            let mut labels: Vec<String> = match node {
+                serde_json::Value::Object(map) => {
+                    map.iter().map(|(k, v)| format!("{}: {}", k, json_preview(v))).collect()
+                }
+                serde_json::Value::Array(arr) => {
+                    arr.iter().enumerate().map(|(i, v)| format!("[{}] {}", i, json_preview(v))).collect()
+                }
+                _ => Vec::new(), // scalar root: fall through to leaf display
+            };
+            if labels.is_empty() {
+                self.modals.show_scrollable(Some("Value"), &wrap_rows(&node.to_string(), 16)).ok();
+                if path.pop().is_none() {
+                    return;
+                }
+                continue;
+            }
+            let entry_count = labels.len();
+            if path.is_empty() {
+                labels.push(String::from(RAW));
+            } else {
+                labels.push(String::from(UP));
+            }
+            labels.push(String::from(EXIT));
+            let title = match path.last() {
+                Some(JsonStep::Key(k)) => k.clone(),
+                Some(JsonStep::Index(i)) => format!("[{}]", i),
+                None => String::from("Message"),
+            };
+            let refs: Vec<&str> = labels.iter().map(|s| s.as_str()).collect();
+            let Some(choice) = self.radio(&title, &refs) else { return };
+            match choice.as_str() {
+                RAW => {
+                    self.modals.show_scrollable(Some("Raw JSON"), &wrap_rows(json, 16)).ok();
+                }
+                UP => {
+                    path.pop();
+                }
+                EXIT => return,
+                _ => {
+                    let Some(pos) = labels[..entry_count].iter().position(|l| *l == choice) else {
+                        continue;
+                    };
+                    match node {
+                        serde_json::Value::Object(map) => {
+                            let key = map.keys().nth(pos).unwrap().clone();
+                            let child = &map[&key];
+                            if child.is_object() || child.is_array() {
+                                path.push(JsonStep::Key(key));
+                            } else {
+                                self.modals
+                                    .show_scrollable(Some(&key), &wrap_rows(&child.to_string(), 16))
+                                    .ok();
+                            }
+                        }
+                        serde_json::Value::Array(arr) => {
+                            let child = &arr[pos];
+                            if child.is_object() || child.is_array() {
+                                path.push(JsonStep::Index(pos));
+                            } else {
+                                self.modals
+                                    .show_scrollable(
+                                        Some(&format!("[{}]", pos)),
+                                        &wrap_rows(&child.to_string(), 16),
+                                    )
+                                    .ok();
+                            }
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+            }
+        }
     }
 
     /// Review menu for a decoded transaction; loops until Sign or Cancel.
@@ -534,34 +700,11 @@ impl ActionManager {
                 }
                 Some("TX data") => {
                     if let Some(digest) = display.calldata_digest {
-                        let hex = format!("{}", digest);
-                        self.modals.show_scrollable(Some("Data hash (8213)"), &group_hex(&hex[2..])).ok();
-                        // empty caption gives the QR the full panel height
-                        self.modals.show_notification("", Some(&hex)).ok();
+                        self.show_hash("Data hash (8213)", digest);
                     }
                 }
                 Some("Sign") => {
-                    match signer_signing::sign_request(request, key) {
-                        Ok(signature) => {
-                            let cbor = signer_decoding::encode_eth_signature(
-                                request.request_id,
-                                &signature,
-                                Some("dc34-eth-signer"),
-                            );
-                            let ur = ur_encode_single("eth-signature", &cbor);
-                            log::info!("eth-signature UR ({} chars)", ur.len());
-                            loop {
-                                self.modals.show_notification("", Some(&ur)).ok();
-                                match self.radio("Signature sent?", &["Show QR again", "Done"]).as_deref() {
-                                    Some("Show QR again") => {}
-                                    _ => break,
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            self.modals.show_notification(&format!("Signing error:\n{:?}", e), None).ok();
-                        }
-                    }
+                    self.sign_and_show(request, key);
                     return;
                 }
                 _ => return, // Cancel or aborted
@@ -846,6 +989,40 @@ impl ActionManager {
             }
         }
     }
+}
+
+/// One navigation step inside a JSON document.
+enum JsonStep {
+    Key(String),
+    Index(usize),
+}
+
+/// Short single-line preview of a JSON value for radio-list entries.
+fn json_preview(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::Object(m) => format!("{{{}}}", m.len()),
+        serde_json::Value::Array(a) => format!("[{}]", a.len()),
+        serde_json::Value::String(s) => {
+            let mut p: String = s.chars().take(10).collect();
+            if s.chars().count() > 10 {
+                p.push('\u{2026}');
+            }
+            p
+        }
+        other => other.to_string(),
+    }
+}
+
+/// Hard-wrap into rows of at most `width` chars for scrollable display.
+fn wrap_rows(s: &str, width: usize) -> String {
+    let mut out = String::with_capacity(s.len() + s.len() / width + 1);
+    for (i, c) in s.chars().enumerate() {
+        if i > 0 && i % width == 0 {
+            out.push('\n');
+        }
+        out.push(c);
+    }
+    out
 }
 
 /// "XXXXXXXX" rows (8 hex chars each) prefixed with a "0x" row, for scrollable display.
