@@ -60,6 +60,34 @@ def keypath_m44600_00() -> bytes:
     return cbor_tag(304, b"\xa1\x01" + components)
 
 
+TX_TRANSFER = bytes.fromhex(
+    "02f001078459682f008506fc23ac008252089468b3465833fb72a70ecdf485e0e4c7bd8665"
+    "fc458806f05b59d3b2000080c0"
+)
+TX_ERC20 = bytes.fromhex(
+    "02f86d0108843b9aca008505d21dba0082fde894a0b86991c6218b36c1d19d4a2e9eb0ce36"
+    "06eb4880b844a9059cbb0000000000000000000000009858effd232b4033e47d90003d41ec"
+    "34ecaeda94000000000000000000000000000000000000000000000000000000003b9aca00"
+    "c0"
+)
+
+
+def make_tx_sign_request(tx_payload: bytes, request_id_byte: int) -> bytes:
+    """eth-sign-request with data-type 4 (eth-typed-transaction), chain 1,
+    path m/44'/60'/0'/0/0 and the matching zero-entropy test-seed address."""
+    body = (
+        b"\xa7"
+        + b"\x01" + cbor_tag(37, urlib.cbor_bytes(bytes([request_id_byte]) * 16))
+        + b"\x02" + urlib.cbor_bytes(tx_payload)
+        + b"\x03" + urlib.cbor_uint(4)  # eth-typed-transaction
+        + b"\x04" + urlib.cbor_uint(1)  # chain id
+        + b"\x05" + keypath_m44600_00()
+        + b"\x06" + urlib.cbor_bytes(bytes.fromhex("9858EfFD232B4033E47d90003D41EC34EcaEda94".replace("0x", "")))
+        + b"\x07" + cbor_text("UR Bridge Test")
+    )
+    return body
+
+
 def make_large_sign_request() -> bytes:
     """EIP-712 typed-data eth-sign-request large enough to need several parts."""
     typed_data = {
@@ -138,6 +166,16 @@ def main():
             "sign-request-eip712-multipart",
             "EIP-712 Permit typed-data request, splits at 100-byte fragments",
             "eth-sign-request", large, 100,
+        ),
+        vector(
+            "tx-eip1559-transfer",
+            "EIP-1559 0.5 ETH transfer (data-type 4), signable by the zero-entropy test seed",
+            "eth-sign-request", make_tx_sign_request(TX_TRANSFER, 0x51), None,
+        ),
+        vector(
+            "tx-eip1559-erc20",
+            "EIP-1559 ERC-20 transfer call with calldata (exercises the 8213 data hash)",
+            "eth-sign-request", make_tx_sign_request(TX_ERC20, 0x52), 80,
         ),
         vector(
             "eth-signature-single",

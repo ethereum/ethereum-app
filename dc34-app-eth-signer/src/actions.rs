@@ -13,7 +13,8 @@ use num_traits::*;
 use ux_api::widgets::TextEntryPayload;
 use xous::{Message, send_message};
 
-use signer_core::request::{ChildNumber, DerivationPath};
+use signer_core::alloy_primitives::U256;
+use signer_core::request::{ChildNumber, DerivationPath, MessageKind, SignRequest, TxDisplay};
 use signer_signing::AccountKey;
 
 use crate::api::{ActionOp, MainOp};
@@ -84,9 +85,6 @@ struct ActionManager {
     main_conn: xous::CID,
     selected_seed: Arc<Mutex<Option<String>>>,
     action_active: Arc<AtomicBool>,
-    /// last fully received eth-sign-request CBOR; consumed by the signing milestone
-    #[allow(dead_code)]
-    pending_request: Option<Vec<u8>>,
 }
 
 impl ActionManager {
@@ -105,7 +103,6 @@ impl ActionManager {
             main_conn,
             selected_seed,
             action_active,
-            pending_request: None,
         }
     }
 
@@ -398,6 +395,180 @@ impl ActionManager {
         }
     }
 
+    /// The account (on `seed`) that owns the request's derivation path, which must
+    /// be m/44'/60'/account'/change/index with a known account index.
+    fn match_account(&self, seed: &str, path: &DerivationPath) -> Option<Account> {
+        let c = &path.components;
+        if c.len() != 5 {
+            return None;
+        }
+        let purpose_ok = c[0].index == 44 && c[0].hardened && c[1].index == 60 && c[1].hardened;
+        if !purpose_ok || !c[2].hardened || c[3].hardened || c[4].hardened {
+            return None;
+        }
+        self.store.list_accounts(seed).into_iter().find(|a| a.index == c[2].index)
+    }
+
+    /// Decode a fully received eth-sign-request and drive the signing process.
+    fn handle_sign_request(&mut self, cbor: &[u8]) {
+        let request = match signer_decoding::decode_sign_request(cbor) {
+            Ok(r) => r,
+            Err(e) => {
+                self.modals.show_notification(&format!("Invalid sign request:\n{:?}", e), None).ok();
+                return;
+            }
+        };
+        let tx = match &request.message {
+            MessageKind::Transaction(tx) => tx.clone(),
+            // placeholders: message signing arrives in a later milestone
+            MessageKind::Eip191(_) => {
+                self.modals.show_notification("EIP-191 messages are\nnot supported yet", None).ok();
+                return;
+            }
+            MessageKind::Eip712(_) => {
+                self.modals.show_notification("EIP-712 typed data is\nnot supported yet", None).ok();
+                return;
+            }
+        };
+        let Some(seed) = self.selected_seed.lock().unwrap().clone() else {
+            self.modals.show_notification("Select a seed first", None).ok();
+            return;
+        };
+        let Some(account) = self.match_account(&seed, &request.derivation_path) else {
+            self.modals
+                .show_notification(
+                    &format!("No account matches\nthe requested path\n{}", request.derivation_path),
+                    None,
+                )
+                .ok();
+            return;
+        };
+
+        // derive the signing key for the requested path
+        let mut entropy = match self.store.read_seed(&seed) {
+            Some(e) => e,
+            None => {
+                self.modals.show_notification("Could not read the seed", None).ok();
+                return;
+            }
+        };
+        self.modals.dynamic_notification(Some("Deriving keys..."), None).ok();
+        let key = signer_signing::key_from_entropy(&entropy, &request.derivation_path);
+        zeroize(&mut entropy);
+        self.modals.dynamic_notification_close().ok();
+        let key = match key {
+            Ok(k) => k,
+            Err(e) => {
+                self.modals.show_notification(&format!("Derivation error:\n{:?}", e), None).ok();
+                return;
+            }
+        };
+        let from = signer_signing::address_of(&key);
+        if let Some(expected) = request.address {
+            if from != expected {
+                self.modals
+                    .show_notification("Address mismatch:\nrequest does not match\nthe derived key", None)
+                    .ok();
+                return;
+            }
+        }
+
+        let display = tx.display();
+        self.transaction_menu(&request, &display, &account, from, &key);
+    }
+
+    /// Review menu for a decoded transaction; loops until Sign or Cancel.
+    fn transaction_menu(
+        &mut self,
+        request: &SignRequest,
+        display: &TxDisplay,
+        account: &Account,
+        from: signer_core::alloy_primitives::Address,
+        key: &signer_signing::SigningKey,
+    ) {
+        loop {
+            let mut items = vec!["From", "To", "Amount", "Other infos"];
+            if display.calldata_digest.is_some() {
+                items.push("TX data");
+            }
+            items.push("Sign");
+            items.push("Cancel");
+            match self.radio(&format!("TX for '{}'", account.name), &items).as_deref() {
+                Some("From") => {
+                    let checksummed = from.to_checksum(None);
+                    self.modals.show_scrollable(Some("From"), &group_hex(&checksummed[2..])).ok();
+                }
+                Some("To") => match display.to {
+                    Some(to) => {
+                        let checksummed = to.to_checksum(None);
+                        self.modals.show_scrollable(Some("To"), &group_hex(&checksummed[2..])).ok();
+                    }
+                    None => {
+                        self.modals.show_notification("Contract creation\n(no destination)", None).ok();
+                    }
+                },
+                Some("Amount") => {
+                    self.modals
+                        .show_scrollable(
+                            Some("Amount"),
+                            &format!("{} ETH\nwei:\n{}", format_eth(display.value), display.value),
+                        )
+                        .ok();
+                }
+                Some("Other infos") => {
+                    let chain = match display.chain_id {
+                        Some(id) => format!("{}", id),
+                        None => String::from("unspecified"),
+                    };
+                    self.modals
+                        .show_scrollable(
+                            None,
+                            &format!(
+                                "Chain id:\n{}\nMax fees:\n{} ETH\nwei:\n{}",
+                                chain,
+                                format_eth(display.max_fee),
+                                display.max_fee
+                            ),
+                        )
+                        .ok();
+                }
+                Some("TX data") => {
+                    if let Some(digest) = display.calldata_digest {
+                        let hex = format!("{}", digest);
+                        self.modals.show_scrollable(Some("Data hash (8213)"), &group_hex(&hex[2..])).ok();
+                        // empty caption gives the QR the full panel height
+                        self.modals.show_notification("", Some(&hex)).ok();
+                    }
+                }
+                Some("Sign") => {
+                    match signer_signing::sign_request(request, key) {
+                        Ok(signature) => {
+                            let cbor = signer_decoding::encode_eth_signature(
+                                request.request_id,
+                                &signature,
+                                Some("dc34-eth-signer"),
+                            );
+                            let ur = ur_encode_single("eth-signature", &cbor);
+                            log::info!("eth-signature UR ({} chars)", ur.len());
+                            loop {
+                                self.modals.show_notification("", Some(&ur)).ok();
+                                match self.radio("Signature sent?", &["Show QR again", "Done"]).as_deref() {
+                                    Some("Show QR again") => {}
+                                    _ => break,
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            self.modals.show_notification(&format!("Signing error:\n{:?}", e), None).ok();
+                        }
+                    }
+                    return;
+                }
+                _ => return, // Cancel or aborted
+            }
+        }
+    }
+
     /// Receive an ERC-4527 eth-sign-request from the camera, part by part.
     /// Completion is detected automatically once every part has been seen; the
     /// user is prompted to advance the sender after each new part.
@@ -436,11 +607,8 @@ impl ActionManager {
                             .ok();
                         return;
                     }
-                    self.modals
-                        .show_notification(&format!("Sign request received\n({} bytes)", message.len()), None)
-                        .ok();
                     log::info!("eth-sign-request received: {} bytes", message.len());
-                    self.pending_request = Some(message);
+                    self.handle_sign_request(&message);
                     return;
                 }
                 UrEvent::Part { received, total } => {
@@ -472,10 +640,9 @@ impl ActionManager {
                     self.tt.sleep_ms(250).ok();
                 }
                 UrEvent::Error(e) => {
+                    // not a (matching) UR: tell the user and keep scanning; a key
+                    // press during acquisition still aborts
                     self.modals.show_notification(&format!("QR error:\n{}", e), None).ok();
-                    if !decoder.in_progress() {
-                        return;
-                    }
                 }
             }
         }
@@ -679,6 +846,33 @@ impl ActionManager {
             }
         }
     }
+}
+
+/// "XXXXXXXX" rows (8 hex chars each) prefixed with a "0x" row, for scrollable display.
+fn group_hex(hex_no_prefix: &str) -> String {
+    let mut out = String::from("0x");
+    for (i, c) in hex_no_prefix.chars().enumerate() {
+        if i % 8 == 0 {
+            out.push('\n');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// Wei to a trimmed decimal ETH string.
+fn format_eth(wei: U256) -> String {
+    let base = U256::from(10u64).pow(U256::from(18u64));
+    let whole = wei / base;
+    let frac = u64::try_from(wei % base).unwrap_or(0); // < 10^18 always fits
+    if frac == 0 {
+        return format!("{}", whole);
+    }
+    let mut frac = format!("{:018}", frac);
+    while frac.ends_with('0') {
+        frac.pop();
+    }
+    format!("{}.{}", whole, frac)
 }
 
 /// Accept "0x<40 hex>" (any case), optionally wrapped as an EIP-681
