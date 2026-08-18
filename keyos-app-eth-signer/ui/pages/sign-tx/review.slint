@@ -18,7 +18,10 @@
 import { Tabs } from "@ui/tabs.slint";
 import { Button } from "@ui/button.slint";
 import { Theme, ControlSize, ButtonVariant } from "@ui/theme.slint";
+// QR rendering and hex chunking are platform helpers backed by Rust, with no
+// ui2 equivalent; everything drawn around them is ui2.
 import { Qrcode } from "../../compat/widgets.slint";
+import { Utils } from "../../compat/theme.slint";
 import { TR2, TrId } from "../../gen/tr.slint";
 
 export component SignReview inherits Rectangle {
@@ -64,6 +67,16 @@ export component SignReview inherits Rectangle {
     // height, so reading it back off them is a binding loop.
     property <length> tabs-height: 52px;
     property <length> pager-height: 48px;
+
+    // Digest tab. The row count comes from the digest's own length, not from
+    // any laid-out geometry, so the QR can take the panel's exact leftover
+    // without measuring anything back.
+    property <int> hex-per-row: 6;
+    property <length> hex-font: 22px;
+    property <[string]> hex-split: Utils.split-by-length(hash-values[tab], 4);
+    property <int> hex-rows: max(1, Math.ceil(hex-split.length / hex-per-row));
+    property <length> hex-height: hex-rows * (hex-font * 1.3) + (hex-rows - 1) * 4px;
+    property <length> qr-plate: min(text-width, panel-height - pad * 3 - hex-height);
 
     width: 448px;
     height: tabs-height + pad + panel-height + pad + pager-height;
@@ -132,13 +145,31 @@ export component SignReview inherits Rectangle {
                 padding: root.pad;
                 spacing: root.pad;
 
-                Text {
-                    text: root.hash-values[root.tab];
-                    color: Theme.palette-foreground;
-                    // Hex has no spaces to break on.
-                    wrap: char-wrap;
-                    font-family: Theme.font-primary;
-                    font-size: Theme.font-size-label;
+                // A digest is read off the screen and compared against the
+                // wallet's, character by character, so it is set large and cut
+                // into blocks of four with alternating colours. Six blocks a
+                // row is what fits at this size; more blocks would only buy a
+                // smaller typeface.
+                VerticalLayout {
+                    spacing: 4px;
+
+                    for row in root.hex-rows: HorizontalLayout {
+                        spacing: 6px;
+                        alignment: start;
+
+                        // Indices past the end of the last row resolve to an
+                        // empty string, which lays out as nothing.
+                        for col in root.hex-per-row: Text {
+                            text: root.hex-split[row * root.hex-per-row + col];
+                            color: Math.mod(row * root.hex-per-row + col, 2) == 0
+                                ? Theme.palette-foreground
+                                : Theme.palette-muted;
+                            font-family: Theme.font-primary;
+                            font-size: root.hex-font;
+                            font-weight: 600;
+                            wrap: no-wrap;
+                        }
+                    }
                 }
 
                 HorizontalLayout {
@@ -148,7 +179,7 @@ export component SignReview inherits Rectangle {
                     // never scaled past nearest-neighbour or its finder
                     // patterns break.
                     Rectangle {
-                        width: min(root.text-width, root.panel-height - root.pad * 2 - 56px);
+                        width: root.qr-plate;
                         height: self.width;
                         background: #ffffff;
                         border-radius: 8px;
