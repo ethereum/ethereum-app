@@ -1,312 +1,27 @@
 // SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
 // SPDX-License-Identifier: MIT
 
-// Ethereum transaction signing, following the Bitcoin app's sign-psbt page:
-// swipeable LineCards with bold section titles and inset CardFields holding
-// chunked, colour-alternating addresses (the explore-addresses style).
+// Ethereum signing review. All three request kinds -- transaction, EIP-712
+// typed data and EIP-191 message -- share one ui2 surface: a tab bar, a
+// fixed-height panel, and Back/Next buttons that page the panel a screenful
+// at a time. See review.slint for why the payload is paged rather than
+// flicked.
 //
-// Card 1: From / To / Amount. Card 2: Max Fees / Chain ID. Card 3 (only with
-// calldata): the ERC-8213 data hash, chunked the same way, plus its QR.
+// The page's geometry is fixed by construction. Every part has a constant
+// height and the panel absorbs whatever the warning row takes, so the sign
+// control cannot be pushed off the bottom of the screen by a longer payload.
 
-import { NavHeader, BasePage, TextSm, TextMd, TextLg, Button, SlideToButton, PageBody, ContentSection, ButtonSection, JumboIconPageBody, TimerCircularProgress, HeadingMd, WrappedIcon, QrCodeCard, Qrcode, LineCard, Pagination, Icon, CardField, BtcAddress } from "../../compat/widgets.slint";
-import { Palette, Size, Importance, CardColor } from "../../compat/theme.slint";
-import { LightPalette } from "../../compat/palettes/light-palette.slint";
+import { NavHeader, BasePage, TextSm, TextMd, Button, PageBody, ContentSection, ButtonSection, JumboIconPageBody, TimerCircularProgress, HeadingMd, WrappedIcon, QrCodeCard, Icon } from "../../compat/widgets.slint";
+import { Palette, Size, Importance } from "../../compat/theme.slint";
 import { TR2, TrId } from "../../gen/tr.slint";
 
 import { SignTxProps } from "./props.slint";
 import { SignTx, SignTxState, SignRequestKind, EthTxView, EthTypedDataView, EthMessageView } from "../../sign-tx.slint";
-import { Navigate } from "../../gen/navigate.slint";
 
 import { SignReview } from "review.slint";
 import { Button as Ui2Button } from "@ui/button.slint";
 import { SlideToConfirm } from "@ui/slide_to_confirm.slint";
 import { Theme, ControlSize, ButtonVariant } from "@ui/theme.slint";
-
-// The swipeable cards fill everything the page does not need for its header,
-// subheader, pagination dots and button row, so a long message gets as much
-// of the 800px screen as possible. Every card on the page shares the height,
-// otherwise the pages of one Pagination would end at different offsets.
-global CardMetrics {
-    out property <length> width: 448px;
-    out property <length> height: 436px;
-    // The card plus the dots strip below it.
-    out property <length> page-height: height + 26px;
-    // The card's own padding, section title and the spacing under it: what a
-    // full-height inner field has to give up. 340px cards used to leave 280px.
-    out property <length> chrome: Size.sz15;
-    // Text width inside an inset field: the card padding and the field's own
-    // inset, Size.sz2 on each of the four edges. Kept as a constant rather
-    // than read back off the laid-out field, because measuring wrapped text
-    // against a width the layout produces is what made the viewport recurse.
-    out property <length> text-width: width - Size.sz2 * 4;
-}
-
-component CardSectionTitle inherits HorizontalLayout {
-    padding-left: Size.sz2;
-    padding-right: Size.sz2;
-    padding-top: Size.sz0_75;
-    padding-bottom: Size.sz0_75;
-    alignment: space-between;
-}
-
-component TitleText inherits TextMd {
-    color: LightPalette.content-primary-inverse;
-    bold: true;
-}
-
-// A chunked hex string (address or hash) in an inset field, explore-addresses
-// style: blocks of 4 with alternating colours.
-component HexField inherits CardField {
-    in property <string> value;
-    in property <length> field-height: Size.sz15;
-
-    height: field-height;
-
-    VerticalLayout {
-        alignment: center;
-        padding-left: Size.sz2;
-        padding-right: Size.sz2;
-
-        BtcAddress {
-            section-spacing: Size.sz0_5;
-            horizontal-alignment: start;
-            address: value;
-            items-per-row: 8;
-        }
-    }
-}
-
-component TxMainCard inherits LineCard {
-    in property <EthTxView> tx;
-
-    card-color: CardColor.blue;
-    width: CardMetrics.width;
-    height: CardMetrics.height;
-
-    VerticalLayout {
-        alignment: start;
-        spacing: Size.sz2_5;
-        padding: Size.sz2;
-
-        CardSectionTitle {
-            TitleText {
-                text: TR2.lookup(TrId.SignTxFrom);
-            }
-        }
-
-        HexField {
-            value: tx.from;
-        }
-
-        CardSectionTitle {
-            TitleText {
-                text: TR2.lookup(TrId.SignTxTo);
-            }
-        }
-
-        if tx.to-is-address: HexField {
-            value: tx.to;
-        }
-
-        if !tx.to-is-address: CardField {
-            height: Size.sz15;
-
-            VerticalLayout {
-                alignment: center;
-                padding-left: Size.sz2;
-                padding-right: Size.sz2;
-
-                TextSm {
-                    text: tx.to;
-                    color: Palette.content-primary;
-                }
-            }
-        }
-
-        CardSectionTitle {
-            TitleText {
-                text: TR2.lookup(TrId.SignTxAmount);
-            }
-        }
-
-        HorizontalLayout {
-            padding-left: Size.sz2;
-
-            TextLg {
-                text: tx.amount;
-                color: LightPalette.content-primary-inverse;
-            }
-        }
-    }
-}
-
-component TxFeesCard inherits LineCard {
-    in property <EthTxView> tx;
-
-    card-color: CardColor.blue;
-    width: CardMetrics.width;
-    height: CardMetrics.height;
-
-    VerticalLayout {
-        alignment: start;
-        spacing: Size.sz2_5;
-        padding: Size.sz2;
-
-        CardSectionTitle {
-            TitleText {
-                text: TR2.lookup(TrId.SignTxMaxFees);
-            }
-        }
-
-        HorizontalLayout {
-            padding-left: Size.sz2;
-
-            TextLg {
-                text: tx.max-fees;
-                color: LightPalette.content-primary-inverse;
-            }
-        }
-
-        CardSectionTitle {
-            TitleText {
-                text: TR2.lookup(TrId.SignTxChainId);
-            }
-        }
-
-        HorizontalLayout {
-            padding-left: Size.sz2;
-
-            TextLg {
-                text: tx.chain-id;
-                color: LightPalette.content-primary-inverse;
-            }
-        }
-    }
-}
-
-// A titled 32-byte hash: chunked hex (three rows) plus its QR code.
-component HashQrCard inherits LineCard {
-    in property <string> title;
-    in property <string> value;
-
-    card-color: CardColor.dark-grey;
-    width: CardMetrics.width;
-    height: CardMetrics.height;
-
-    property <length> hex-height: Size.sz15 + Size.sz6;
-    // The plate takes whatever the card has left under the hex rows, so the
-    // code grows with the card instead of leaving a gap at the bottom.
-    property <length> plate: root.height - CardMetrics.chrome - hex-height - Size.sz2_5;
-
-    VerticalLayout {
-        alignment: start;
-        spacing: Size.sz2_5;
-        padding: Size.sz2;
-
-        CardSectionTitle {
-            TitleText {
-                text: title;
-            }
-        }
-
-        HexField {
-            value: value;
-            // 17 blocks of 4 -> three rows.
-            field-height: root.hex-height;
-        }
-
-        HorizontalLayout {
-            alignment: center;
-
-            // A white plate with a >=12px quiet zone; never scale or clip the
-            // QR image itself or the finder patterns break.
-            Rectangle {
-                width: root.plate;
-                height: root.plate;
-                background: Palette.white;
-                border-radius: Size.sz2;
-
-                Qrcode {
-                    width: root.plate - Size.sz6;
-                    height: root.plate - Size.sz6;
-                    data: value;
-                }
-            }
-        }
-    }
-}
-
-// A titled card with scrollable, word-wrapped text (typed-data JSON or an
-// EIP-191 message body).
-component ScrollTextCard inherits LineCard {
-    in property <string> title;
-    in property <string> body;
-
-    card-color: CardColor.blue;
-    // The card-wide TouchArea sits in front of everything; it would eat the
-    // drag before the Flickable below ever saw it.
-    touch-enabled: false;
-    width: CardMetrics.width;
-    height: CardMetrics.height;
-
-    // The scroll window: the inset field less the Flickable's own top and
-    // bottom inset.
-    property <length> view-height: root.height - CardMetrics.chrome - Size.sz2;
-
-    VerticalLayout {
-        alignment: start;
-        spacing: Size.sz2_5;
-        padding: Size.sz2;
-
-        CardSectionTitle {
-            TitleText {
-                text: title;
-            }
-        }
-
-        CardField {
-            height: root.height - CardMetrics.chrome;
-
-            // Measures the wrapped body off-screen, at a constant width. A
-            // Text's preferred-height is a function of its width, so measuring
-            // against a width the layout hands down makes the viewport depend
-            // on the layout that depends on the viewport. Slint breaks that
-            // cycle silently -- the viewport stays at the visible height and
-            // nothing scrolls -- or panics with "Recursion detected" once
-            // anything else reads the value. The card is a fixed width, so the
-            // text width is knowable up front and the cycle never forms.
-            measure := TextSm {
-                x: -10000px;
-                y: -10000px;
-                width: CardMetrics.text-width;
-                text: body;
-                color: transparent;
-                wrap: word-wrap;
-            }
-
-            flick := Flickable {
-                x: Size.sz2;
-                y: Size.sz1;
-                width: CardMetrics.text-width;
-                height: root.view-height;
-                viewport-width: self.width;
-                // The trailing gap keeps the last line off the bottom edge
-                // once scrolled all the way down.
-                viewport-height: max(self.height, measure.preferred-height + Size.sz2);
-
-                TextSm {
-                    x: 0;
-                    y: 0;
-                    width: CardMetrics.text-width;
-                    height: parent.viewport-height;
-                    text: body;
-                    color: Palette.content-primary;
-                    wrap: word-wrap;
-                }
-            }
-        }
-    }
-}
 
 component WarningRow inherits HorizontalLayout {
     in property <string> text;
@@ -332,19 +47,19 @@ component WarningRow inherits HorizontalLayout {
     }
 }
 
-// The transaction and typed-data flows keep the swipeable cards inherited
-// from the built-in Bitcoin app, which is legacy @ui. The EIP-191 message
-// flow, where the payload must be read end to end before signing, is
-// ui2-native and pages explicitly -- see review.slint for why a gesture is
-// not good enough there.
 component SignPage inherits VerticalLayout {
     property <bool> signing: SignTx.state == SignTxState.Signing;
     property <SignRequestKind> kind: SignTx.kind;
     property <bool> typed: kind == SignRequestKind.TypedData;
     property <bool> message: kind == SignRequestKind.Message;
+    property <bool> transaction: kind == SignRequestKind.Transaction;
     property <EthTxView> tx: SignTx.pending-tx;
     property <EthTypedDataView> td: SignTx.pending-typed-data;
     property <EthMessageView> msg: SignTx.pending-message;
+
+    // A warning takes its band out of the panel instead of pushing everything
+    // below it down and off the screen.
+    property <bool> warn: (transaction && tx.has-data) || (message && !msg.displayable);
 
     NavHeader {
         title: typed ? TR2.lookup(TrId.SignTxTypedDataTitle)
@@ -357,130 +72,7 @@ component SignPage inherits VerticalLayout {
         }
     }
 
-    if !message: VerticalLayout {
-        alignment: space-between;
-        padding-left: Size.sz4;
-        padding-right: Size.sz4;
-        padding-bottom: Size.sz4;
-
-        ContentSection {
-            spacing: Size.sz2;
-
-            TextSm {
-                text: typed ? TR2.lookup(TrId.SignTxTypedDataSubheader)
-                    : TR2.lookup(TrId.SigningTransactionSubheader);
-                color: Palette.content-tertiary;
-                horizontal-alignment: center;
-            }
-
-            if kind == SignRequestKind.Transaction && tx.has-data: WarningRow {
-                text: TR2.lookup(TrId.SignTxDataWarning);
-            }
-
-            if kind == SignRequestKind.Transaction: Pagination {
-                total-pages: tx.has-data ? 3 : 2;
-                height: CardMetrics.page-height;
-                width: CardMetrics.width;
-                page-spacing: Size.sz2_5;
-                dots-padding-top: Size.sz2;
-
-                VerticalLayout {
-                    width: CardMetrics.width;
-                    TxMainCard {
-                        tx: tx;
-                    }
-                }
-
-                VerticalLayout {
-                    width: CardMetrics.width;
-                    TxFeesCard {
-                        tx: tx;
-                    }
-                }
-
-                if tx.has-data: VerticalLayout {
-                    width: CardMetrics.width;
-                    HashQrCard {
-                        title: TR2.lookup(TrId.SignTxDataHashTitle);
-                        value: tx.data-digest;
-                    }
-                }
-            }
-
-            // Typed data: the scrollable message plus its ERC-8213 hashes.
-            if typed: Pagination {
-                total-pages: 4;
-                height: CardMetrics.page-height;
-                width: CardMetrics.width;
-                page-spacing: Size.sz2_5;
-                dots-padding-top: Size.sz2;
-
-                VerticalLayout {
-                    width: CardMetrics.width;
-                    ScrollTextCard {
-                        title: TR2.lookup(TrId.SignTxMessageTitle);
-                        body: td.json;
-                    }
-                }
-
-                VerticalLayout {
-                    width: CardMetrics.width;
-                    HashQrCard {
-                        title: TR2.lookup(TrId.SignTxEip712Digest);
-                        value: td.eip712-digest;
-                    }
-                }
-
-                VerticalLayout {
-                    width: CardMetrics.width;
-                    HashQrCard {
-                        title: TR2.lookup(TrId.SignTxDomainHash);
-                        value: td.domain-hash;
-                    }
-                }
-
-                VerticalLayout {
-                    width: CardMetrics.width;
-                    HashQrCard {
-                        title: TR2.lookup(TrId.SignTxMessageHash);
-                        value: td.message-hash;
-                    }
-                }
-            }
-        }
-
-        if !signing: ButtonSection {
-            Button {
-                icon: "";
-                label: TR2.lookup(TrId.CommonButtonCancel);
-                importance: tertiary;
-                clicked => {
-                    SignTx.done();
-                }
-            }
-
-            SlideToButton {
-                label: TR2.lookup(TrId.CommonSlideToSignSign);
-                info-label: TR2.lookup(TrId.CommonSlideToSignHelper);
-
-                activated(id) => {
-                    SignTx.sign-tx();
-                }
-            }
-        }
-
-        if signing: ButtonSection {
-            Button {
-                label: TR2.lookup(TrId.CommonSlideToSignSigning);
-                importance: tertiary;
-                loading: true;
-                enabled: false;
-            }
-        }
-    }
-
-    // EIP-191 personal message, ui2-native.
-    if message: VerticalLayout {
+    VerticalLayout {
         alignment: space-between;
         padding-left: Size.sz4;
         padding-right: Size.sz4;
@@ -491,7 +83,9 @@ component SignPage inherits VerticalLayout {
             spacing: Size.sz2;
 
             Text {
-                text: TR2.lookup(TrId.SignTxMessageSubheader);
+                text: typed ? TR2.lookup(TrId.SignTxTypedDataSubheader)
+                    : message ? TR2.lookup(TrId.SignTxMessageSubheader)
+                    : TR2.lookup(TrId.SigningTransactionSubheader);
                 color: Theme.palette-muted;
                 horizontal-alignment: center;
                 wrap: word-wrap;
@@ -499,18 +93,35 @@ component SignPage inherits VerticalLayout {
                 font-size: Theme.font-size-subtitle;
             }
 
-            if !msg.displayable: WarningRow {
-                text: TR2.lookup(TrId.SignTxMessageWarning);
+            if warn: WarningRow {
+                text: transaction ? TR2.lookup(TrId.SignTxDataWarning)
+                    : TR2.lookup(TrId.SignTxMessageWarning);
             }
 
             review := SignReview {
-                body: msg.text;
-                tab-labels: [
-                    TR2.lookup(TrId.SignTxMessageTitle),
-                    TR2.lookup(TrId.SignTxEip191Digest),
-                ];
-                // Index 0 is the body tab and carries no hash.
-                hash-values: ["", msg.eip191-digest];
+                avail-height: warn ? 428px : 504px;
+
+                // The transaction lists its fields; the other two wrap text.
+                fields-mode: transaction;
+                tx: tx;
+                body: typed ? td.json : msg.text;
+
+                // Captions are kept short: four tabs share 448px.
+                tab-labels: transaction
+                    ? (tx.has-data
+                        ? [TR2.lookup(TrId.SignTxTabDetails), TR2.lookup(TrId.SignTxTabData)]
+                        : [TR2.lookup(TrId.SignTxTabDetails)])
+                    : typed
+                        ? [TR2.lookup(TrId.SignTxMessageTitle), TR2.lookup(TrId.SignTxTabEip712),
+                           TR2.lookup(TrId.SignTxTabDomain), TR2.lookup(TrId.SignTxTabHash)]
+                        : [TR2.lookup(TrId.SignTxMessageTitle), TR2.lookup(TrId.SignTxTabDigest)];
+
+                // Index 0 is the payload tab and carries no hash.
+                hash-values: transaction
+                    ? ["", tx.data-digest]
+                    : typed
+                        ? ["", td.eip712-digest, td.domain-hash, td.message-hash]
+                        : ["", msg.eip191-digest];
             }
         }
 
@@ -529,8 +140,8 @@ component SignPage inherits VerticalLayout {
                 }
             }
 
-            // Signing stays locked until the message has been paged to its
-            // end, so the payload cannot be approved unseen.
+            // Signing stays locked until the payload has been paged to its
+            // end, so nothing can be approved unseen.
             SlideToConfirm {
                 label: TR2.lookup(TrId.CommonSlideToSignSign);
                 hint: TR2.lookup(TrId.CommonSlideToSignHelper);

@@ -23,15 +23,98 @@ import { Theme, ControlSize, ButtonVariant } from "@ui/theme.slint";
 import { Qrcode } from "../../compat/widgets.slint";
 import { Utils } from "../../compat/theme.slint";
 import { TR2, TrId } from "../../gen/tr.slint";
+import { EthTxView } from "../../sign-tx.slint";
+
+// A hex string cut into blocks of four with alternating colours: the reading
+// aid for any value that has to be compared against a wallet character by
+// character. Six blocks a row is what fits the panel at this size.
+component HexBlocks inherits VerticalLayout {
+    in property <string> value;
+    in property <int> per-row: 6;
+    in property <length> text-size: 22px;
+
+    property <[string]> split: Utils.split-by-length(value, 4);
+    property <int> rows: max(1, Math.ceil(split.length / per-row));
+
+    spacing: 4px;
+
+    for row in root.rows: HorizontalLayout {
+        spacing: 6px;
+        alignment: start;
+
+        // Indices past the end of the last row resolve to an empty string,
+        // which lays out as nothing.
+        for col in root.per-row: Text {
+            text: root.split[row * root.per-row + col];
+            color: Math.mod(row * root.per-row + col, 2) == 0
+                ? Theme.palette-foreground
+                : Theme.palette-muted;
+            font-family: Theme.font-primary;
+            font-size: root.text-size;
+            font-weight: 600;
+            wrap: no-wrap;
+        }
+    }
+}
+
+// One labelled transaction field. Heights are fixed so the panel's scroll
+// arithmetic and this layout cannot drift apart.
+component TxField inherits VerticalLayout {
+    in property <string> label;
+    in property <string> value;
+    in property <bool> hex: false;
+    in property <int> per-row: 6;
+    in property <length> label-height: 26px;
+    in property <length> value-height: 30px;
+    in property <length> hex-size: 22px;
+
+    alignment: start;
+
+    Text {
+        height: root.label-height;
+        text: root.label;
+        color: Theme.palette-muted;
+        font-family: Theme.font-primary;
+        font-size: Theme.font-size-label;
+        font-weight: 600;
+        vertical-alignment: center;
+    }
+
+    if root.hex: HexBlocks {
+        value: root.value;
+        per-row: root.per-row;
+        text-size: root.hex-size;
+    }
+
+    if !root.hex: Text {
+        height: root.value-height;
+        text: root.value;
+        color: Theme.palette-foreground;
+        font-family: Theme.font-primary;
+        font-size: Theme.font-size-body;
+        vertical-alignment: center;
+        wrap: no-wrap;
+    }
+}
 
 export component SignReview inherits Rectangle {
-    // One label per tab. Tab 0 shows `body`; every later tab shows the hash at
-    // the same index in `hash-values`, so entry 0 there is unused.
+    // One label per tab. Tab 0 carries the payload -- wrapped text, or the
+    // transaction's fields when `fields-mode` is set. Every later tab shows the
+    // hash at the same index in `hash-values`, so entry 0 there is unused.
     in property <[string]> tab-labels;
     in property <[string]> hash-values;
     in property <string> body;
 
-    in property <length> panel-height: 372px;
+    // Transaction payload. Its height is arithmetic rather than measured: the
+    // fields are a fixed set and the hex row counts come from the values' own
+    // lengths, so the viewport never has to ask the layout how tall it got.
+    in property <bool> fields-mode: false;
+    in property <EthTxView> tx;
+
+    // The height the page hands over. The panel takes whatever the tab bar and
+    // the pager leave, so a single-tab request gets that space back instead of
+    // stranding it.
+    in property <length> avail-height: 504px;
 
     // Latched once the body has been paged to its end, or true from the start
     // when it never needed paging. Never re-derived from the pager position,
@@ -51,7 +134,8 @@ export component SignReview inherits Rectangle {
     property <length> text-width: root.width - pad * 2;
 
     property <length> view-height: panel-height - pad * 2;
-    property <length> content-height: max(view-height, measure.preferred-height + 8px);
+    property <length> content-height: max(view-height,
+        fields-mode ? fields-height : measure.preferred-height + 8px);
     property <length> max-offset: content-height - view-height;
     property <bool> fits: content-height <= view-height;
 
@@ -60,13 +144,43 @@ export component SignReview inherits Rectangle {
     property <bool> at-end: flick.viewport-y <= -max-offset + 1px;
     property <bool> at-top: flick.viewport-y >= -1px;
 
-    property <int> pages: max(1, Math.ceil(content-height / view-height));
-    property <int> page: min(pages, Math.floor(-flick.viewport-y / view-height) + 1);
+    // A page turn keeps the last line of the previous screen in view, so no
+    // line is ever split across a boundary and lost.
+    property <length> overlap: 24px;
+    property <length> step: view-height - overlap;
 
-    // Fixed, never derived from the children: they size themselves from this
-    // height, so reading it back off them is a binding loop.
+    // Counted in pager positions, not in screenfuls: the final turn is clamped
+    // to max-offset and lands short of a full step, which a plain
+    // content/view ratio reports as one page fewer than the user can reach.
+    property <int> pages: 1 + Math.ceil(max-offset / step);
+    property <int> page: at-end ? pages : min(pages, 1 + Math.round(-flick.viewport-y / step));
+
+    // Fixed, never derived from the children: they size themselves from these,
+    // so reading them back off the children is a binding loop. A lone tab gets
+    // no bar at all -- a zero-height Tabs still paints its own outline. The
+    // array length is an input, so all of this stays constant.
+    property <bool> multi-tab: tab-labels.length > 1;
     property <length> tabs-height: 52px;
     property <length> pager-height: 48px;
+    property <length> panel-height: avail-height - pager-height - pad
+        - (multi-tab ? tabs-height + pad : 0px);
+
+    // Transaction fields, laid out and measured by the same arithmetic so the
+    // two can never disagree.
+    property <length> label-height: 26px;
+    property <length> value-height: 30px;
+    property <length> field-gap: 14px;
+    property <int> from-rows: max(1, Math.ceil(Utils.split-by-length(tx.from, 4).length / hex-per-row));
+    property <int> to-rows: tx.to-is-address
+        ? max(1, Math.ceil(Utils.split-by-length(tx.to, 4).length / hex-per-row))
+        : 1;
+    property <length> hex-row-height: hex-font * 1.3;
+    property <length> from-height: label-height + from-rows * hex-row-height;
+    property <length> to-height: label-height + to-rows * hex-row-height;
+    // From, To, Amount, Max Fees, Chain ID, with a gap between each.
+    property <length> fields-height: from-height + to-height
+        + (label-height + value-height) * 3
+        + field-gap * 4 + 8px;
 
     // Digest tab. The row count comes from the digest's own length, not from
     // any laid-out geometry, so the QR can take the panel's exact leftover
@@ -79,7 +193,7 @@ export component SignReview inherits Rectangle {
     property <length> qr-plate: min(text-width, panel-height - pad * 3 - hex-height);
 
     width: 448px;
-    height: tabs-height + pad + panel-height + pad + pager-height;
+    height: avail-height;
 
     // Measured off-screen, outside every layout, with the visible text's exact
     // font. A different font here silently mis-sizes the viewport.
@@ -98,7 +212,7 @@ export component SignReview inherits Rectangle {
         alignment: start;
         spacing: root.pad;
 
-        Tabs {
+        if root.multi-tab: Tabs {
             height: root.tabs-height;
             options: tab-labels;
             show-panel: false;
@@ -128,7 +242,15 @@ export component SignReview inherits Rectangle {
                 viewport-width: self.width;
                 viewport-height: root.content-height;
 
-                Text {
+                // The latch lives here rather than in the Next handler so it
+                // arms however the bottom was reached -- button or finger.
+                changed viewport-y => {
+                    if (self.viewport-y <= -root.max-offset + 1px) {
+                        root.paged-to-end = true;
+                    }
+                }
+
+                if !root.fields-mode: Text {
                     x: 0;
                     y: 0;
                     width: root.text-width;
@@ -139,37 +261,66 @@ export component SignReview inherits Rectangle {
                     font-family: Theme.font-primary;
                     font-size: Theme.font-size-body;
                 }
+
+                if root.fields-mode: VerticalLayout {
+                    x: 0;
+                    y: 0;
+                    width: root.text-width;
+                    height: root.fields-height;
+                    alignment: start;
+                    spacing: root.field-gap;
+
+                    TxField {
+                        label: TR2.lookup(TrId.SignTxFrom);
+                        value: root.tx.from;
+                        hex: true;
+                        per-row: root.hex-per-row;
+                        hex-size: root.hex-font;
+                        label-height: root.label-height;
+                        value-height: root.value-height;
+                    }
+
+                    TxField {
+                        label: TR2.lookup(TrId.SignTxTo);
+                        value: root.tx.to;
+                        hex: root.tx.to-is-address;
+                        per-row: root.hex-per-row;
+                        hex-size: root.hex-font;
+                        label-height: root.label-height;
+                        value-height: root.value-height;
+                    }
+
+                    TxField {
+                        label: TR2.lookup(TrId.SignTxAmount);
+                        value: root.tx.amount;
+                        label-height: root.label-height;
+                        value-height: root.value-height;
+                    }
+
+                    TxField {
+                        label: TR2.lookup(TrId.SignTxMaxFees);
+                        value: root.tx.max-fees;
+                        label-height: root.label-height;
+                        value-height: root.value-height;
+                    }
+
+                    TxField {
+                        label: TR2.lookup(TrId.SignTxChainId);
+                        value: root.tx.chain-id;
+                        label-height: root.label-height;
+                        value-height: root.value-height;
+                    }
+                }
             }
 
             if root.tab > 0: VerticalLayout {
                 padding: root.pad;
                 spacing: root.pad;
 
-                // A digest is read off the screen and compared against the
-                // wallet's, character by character, so it is set large and cut
-                // into blocks of four with alternating colours. Six blocks a
-                // row is what fits at this size; more blocks would only buy a
-                // smaller typeface.
-                VerticalLayout {
-                    spacing: 4px;
-
-                    for row in root.hex-rows: HorizontalLayout {
-                        spacing: 6px;
-                        alignment: start;
-
-                        // Indices past the end of the last row resolve to an
-                        // empty string, which lays out as nothing.
-                        for col in root.hex-per-row: Text {
-                            text: root.hex-split[row * root.hex-per-row + col];
-                            color: Math.mod(row * root.hex-per-row + col, 2) == 0
-                                ? Theme.palette-foreground
-                                : Theme.palette-muted;
-                            font-family: Theme.font-primary;
-                            font-size: root.hex-font;
-                            font-weight: 600;
-                            wrap: no-wrap;
-                        }
-                    }
+                HexBlocks {
+                    value: root.hash-values[root.tab];
+                    per-row: root.hex-per-row;
+                    text-size: root.hex-font;
                 }
 
                 HorizontalLayout {
@@ -205,7 +356,7 @@ export component SignReview inherits Rectangle {
                 // Only the body tab pages; the hash tabs are a single screen.
                 disabled: root.tab != 0 || root.at-top;
                 clicked => {
-                    flick.viewport-y = min(0px, flick.viewport-y + root.view-height);
+                    flick.viewport-y = min(0px, flick.viewport-y + root.step);
                 }
             }
 
@@ -235,10 +386,7 @@ export component SignReview inherits Rectangle {
                 size: ControlSize.md;
                 disabled: root.tab != 0 || root.at-end;
                 clicked => {
-                    flick.viewport-y = max(-root.max-offset, flick.viewport-y - root.view-height);
-                    if (flick.viewport-y <= -root.max-offset + 1px) {
-                        root.paged-to-end = true;
-                    }
+                    flick.viewport-y = max(-root.max-offset, flick.viewport-y - root.step);
                 }
             }
         }
