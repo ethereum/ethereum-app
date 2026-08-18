@@ -1,0 +1,215 @@
+// SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: MIT
+
+// Native ui2 review surface for EIP-191 messages and EIP-712 typed data.
+//
+// Reading the payload is the security step of signing, so it must not depend
+// on a flick gesture. Flickable only captures a drag when a move of more than
+// 8px lands within 500ms of the press (DISTANCE_THRESHOLD / DURATION_THRESHOLD
+// in Slint's flickable.rs); a mouse in the simulator always clears that, a
+// finger starting slowly on hardware routinely does not, so the same build
+// scrolls on the simulator and feels dead on the device. Paging is therefore
+// driven by buttons that move the viewport a screenful at a time, and the
+// caller keeps the sign control disabled until `read-to-end` latches.
+//
+// The gesture still works where the hardware allows it; it is a convenience
+// on top, never the only way to reach the end of the text.
+
+import { Tabs } from "@ui/tabs.slint";
+import { Button } from "@ui/button.slint";
+import { Theme, ControlSize, ButtonVariant } from "@ui/theme.slint";
+import { Qrcode } from "../../compat/widgets.slint";
+import { TR2, TrId } from "../../gen/tr.slint";
+
+export component SignReview inherits Rectangle {
+    // One label per tab. Tab 0 shows `body`; every later tab shows the hash at
+    // the same index in `hash-values`, so entry 0 there is unused.
+    in property <[string]> tab-labels;
+    in property <[string]> hash-values;
+    in property <string> body;
+
+    in property <length> panel-height: 372px;
+
+    // Latched once the body has been paged to its end, or true from the start
+    // when it never needed paging. Never re-derived from the pager position,
+    // so a caller can gate the sign control on it without the value flickering
+    // back to false when the user pages up again.
+    out property <bool> read-to-end: fits || paged-to-end;
+
+    property <bool> paged-to-end;
+    property <int> tab: 0;
+
+    // The card is a fixed width, so the text width is a constant. Measuring
+    // wrapped text against a width the layout produces makes the viewport
+    // depend on the layout that depends on the viewport; Slint either breaks
+    // that cycle silently, leaving the viewport stuck at the visible height so
+    // nothing scrolls, or panics with "Recursion detected".
+    property <length> pad: 16px;
+    property <length> text-width: root.width - pad * 2;
+
+    property <length> view-height: panel-height - pad * 2;
+    property <length> content-height: max(view-height, measure.preferred-height + 8px);
+    property <length> max-offset: content-height - view-height;
+    property <bool> fits: content-height <= view-height;
+
+    // A pixel of slack: the offset is a float length and lands a hair short of
+    // max-offset after repeated subtraction.
+    property <bool> at-end: flick.viewport-y <= -max-offset + 1px;
+    property <bool> at-top: flick.viewport-y >= -1px;
+
+    property <int> pages: max(1, Math.ceil(content-height / view-height));
+    property <int> page: min(pages, Math.floor(-flick.viewport-y / view-height) + 1);
+
+    // Fixed, never derived from the children: they size themselves from this
+    // height, so reading it back off them is a binding loop.
+    property <length> tabs-height: 52px;
+    property <length> pager-height: 48px;
+
+    width: 448px;
+    height: tabs-height + pad + panel-height + pad + pager-height;
+
+    // Measured off-screen, outside every layout, with the visible text's exact
+    // font. A different font here silently mis-sizes the viewport.
+    measure := Text {
+        x: -10000px;
+        y: -10000px;
+        width: text-width;
+        text: body;
+        color: transparent;
+        wrap: word-wrap;
+        font-family: Theme.font-primary;
+        font-size: Theme.font-size-body;
+    }
+
+    VerticalLayout {
+        alignment: start;
+        spacing: root.pad;
+
+        Tabs {
+            height: root.tabs-height;
+            options: tab-labels;
+            show-panel: false;
+            full-width: true;
+            size: ControlSize.md;
+            selected-index <=> root.tab;
+        }
+
+        panel := Rectangle {
+            height: root.panel-height;
+            background: Theme.palette-surface;
+            border-radius: 24px;
+            border-width: 1px;
+            border-color: Theme.palette-border;
+            clip: true;
+
+            // Always instantiated, never conditional: the pager buttons drive
+            // its viewport-y, and an element inside an `if` is not addressable
+            // from outside it. Hidden elements take no input, so the hash tabs
+            // are unaffected.
+            flick := Flickable {
+                visible: root.tab == 0;
+                x: root.pad;
+                y: root.pad;
+                width: root.text-width;
+                height: root.view-height;
+                viewport-width: self.width;
+                viewport-height: root.content-height;
+
+                Text {
+                    x: 0;
+                    y: 0;
+                    width: root.text-width;
+                    height: parent.viewport-height;
+                    text: root.body;
+                    color: Theme.palette-foreground;
+                    wrap: word-wrap;
+                    font-family: Theme.font-primary;
+                    font-size: Theme.font-size-body;
+                }
+            }
+
+            if root.tab > 0: VerticalLayout {
+                padding: root.pad;
+                spacing: root.pad;
+
+                Text {
+                    text: root.hash-values[root.tab];
+                    color: Theme.palette-foreground;
+                    // Hex has no spaces to break on.
+                    wrap: char-wrap;
+                    font-family: Theme.font-primary;
+                    font-size: Theme.font-size-label;
+                }
+
+                HorizontalLayout {
+                    alignment: center;
+
+                    // A white plate with a quiet zone; the QR image itself is
+                    // never scaled past nearest-neighbour or its finder
+                    // patterns break.
+                    Rectangle {
+                        width: min(root.text-width, root.panel-height - root.pad * 2 - 56px);
+                        height: self.width;
+                        background: #ffffff;
+                        border-radius: 8px;
+
+                        Qrcode {
+                            width: parent.width - 24px;
+                            height: parent.height - 24px;
+                            data: root.hash-values[root.tab];
+                        }
+                    }
+                }
+            }
+        }
+
+        HorizontalLayout {
+            height: root.pager-height;
+            spacing: 8px;
+
+            Button {
+                text: TR2.lookup(TrId.CommonButtonBack);
+                variant: ButtonVariant.secondary;
+                size: ControlSize.md;
+                // Only the body tab pages; the hash tabs are a single screen.
+                disabled: root.tab != 0 || root.at-top;
+                clicked => {
+                    flick.viewport-y = min(0px, flick.viewport-y + root.view-height);
+                }
+            }
+
+            // Free-positioned inside a fixed-width box: the counter reads the
+            // text measurement, and a layout that sized itself from this label
+            // would close the very cycle the constant text-width avoids.
+            Rectangle {
+                width: 104px;
+
+                Text {
+                    x: 0;
+                    y: 0;
+                    width: parent.width;
+                    height: parent.height;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    text: root.tab == 0 ? "\{root.page} / \{root.pages}" : "";
+                    color: Theme.palette-muted;
+                    font-family: Theme.font-primary;
+                    font-size: Theme.font-size-label;
+                }
+            }
+
+            Button {
+                text: TR2.lookup(TrId.CommonButtonNext);
+                variant: ButtonVariant.primary;
+                size: ControlSize.md;
+                disabled: root.tab != 0 || root.at-end;
+                clicked => {
+                    flick.viewport-y = max(-root.max-offset, flick.viewport-y - root.view-height);
+                    if (flick.viewport-y <= -root.max-offset + 1px) {
+                        root.paged-to-end = true;
+                    }
+                }
+            }
+        }
+    }
+}

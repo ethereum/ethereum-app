@@ -17,6 +17,11 @@ import { SignTxProps } from "./props.slint";
 import { SignTx, SignTxState, SignRequestKind, EthTxView, EthTypedDataView, EthMessageView } from "../../sign-tx.slint";
 import { Navigate } from "../../gen/navigate.slint";
 
+import { SignReview } from "review.slint";
+import { Button as Ui2Button } from "@ui/button.slint";
+import { SlideToConfirm } from "@ui/slide_to_confirm.slint";
+import { Theme, ControlSize, ButtonVariant } from "@ui/theme.slint";
+
 // The swipeable cards fill everything the page does not need for its header,
 // subheader, pagination dots and button row, so a long message gets as much
 // of the 800px screen as possible. Every card on the page shares the height,
@@ -327,6 +332,11 @@ component WarningRow inherits HorizontalLayout {
     }
 }
 
+// The transaction and typed-data flows keep the swipeable cards inherited
+// from the built-in Bitcoin app, which is legacy @ui. The EIP-191 message
+// flow, where the payload must be read end to end before signing, is
+// ui2-native and pages explicitly -- see review.slint for why a gesture is
+// not good enough there.
 component SignPage inherits VerticalLayout {
     property <bool> signing: SignTx.state == SignTxState.Signing;
     property <SignRequestKind> kind: SignTx.kind;
@@ -347,7 +357,7 @@ component SignPage inherits VerticalLayout {
         }
     }
 
-    VerticalLayout {
+    if !message: VerticalLayout {
         alignment: space-between;
         padding-left: Size.sz4;
         padding-right: Size.sz4;
@@ -358,7 +368,6 @@ component SignPage inherits VerticalLayout {
 
             TextSm {
                 text: typed ? TR2.lookup(TrId.SignTxTypedDataSubheader)
-                    : message ? TR2.lookup(TrId.SignTxMessageSubheader)
                     : TR2.lookup(TrId.SigningTransactionSubheader);
                 color: Palette.content-tertiary;
                 horizontal-alignment: center;
@@ -366,10 +375,6 @@ component SignPage inherits VerticalLayout {
 
             if kind == SignRequestKind.Transaction && tx.has-data: WarningRow {
                 text: TR2.lookup(TrId.SignTxDataWarning);
-            }
-
-            if message && !msg.displayable: WarningRow {
-                text: TR2.lookup(TrId.SignTxMessageWarning);
             }
 
             if kind == SignRequestKind.Transaction: Pagination {
@@ -442,32 +447,6 @@ component SignPage inherits VerticalLayout {
                     }
                 }
             }
-
-            // EIP-191 personal message: the scrollable message plus its
-            // ERC-8213 EIP-191 Digest.
-            if message: Pagination {
-                total-pages: 2;
-                height: CardMetrics.page-height;
-                width: CardMetrics.width;
-                page-spacing: Size.sz2_5;
-                dots-padding-top: Size.sz2;
-
-                VerticalLayout {
-                    width: CardMetrics.width;
-                    ScrollTextCard {
-                        title: TR2.lookup(TrId.SignTxMessageTitle);
-                        body: msg.text;
-                    }
-                }
-
-                VerticalLayout {
-                    width: CardMetrics.width;
-                    HashQrCard {
-                        title: TR2.lookup(TrId.SignTxEip191Digest);
-                        value: msg.eip191-digest;
-                    }
-                }
-            }
         }
 
         if !signing: ButtonSection {
@@ -497,6 +476,80 @@ component SignPage inherits VerticalLayout {
                 loading: true;
                 enabled: false;
             }
+        }
+    }
+
+    // EIP-191 personal message, ui2-native.
+    if message: VerticalLayout {
+        alignment: space-between;
+        padding-left: Size.sz4;
+        padding-right: Size.sz4;
+        padding-bottom: Size.sz4;
+
+        VerticalLayout {
+            alignment: start;
+            spacing: Size.sz2;
+
+            Text {
+                text: TR2.lookup(TrId.SignTxMessageSubheader);
+                color: Theme.palette-muted;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+                font-family: Theme.font-primary;
+                font-size: Theme.font-size-subtitle;
+            }
+
+            if !msg.displayable: WarningRow {
+                text: TR2.lookup(TrId.SignTxMessageWarning);
+            }
+
+            review := SignReview {
+                body: msg.text;
+                tab-labels: [
+                    TR2.lookup(TrId.SignTxMessageTitle),
+                    TR2.lookup(TrId.SignTxEip191Digest),
+                ];
+                // Index 0 is the body tab and carries no hash.
+                hash-values: ["", msg.eip191-digest];
+            }
+        }
+
+        if !signing: VerticalLayout {
+            alignment: end;
+            spacing: Size.sz2;
+
+            Ui2Button {
+                text: TR2.lookup(TrId.CommonButtonCancel);
+                variant: ButtonVariant.tertiary;
+                size: ControlSize.md;
+                full-width: true;
+
+                clicked => {
+                    SignTx.done();
+                }
+            }
+
+            // Signing stays locked until the message has been paged to its
+            // end, so the payload cannot be approved unseen.
+            SlideToConfirm {
+                label: TR2.lookup(TrId.CommonSlideToSignSign);
+                hint: TR2.lookup(TrId.CommonSlideToSignHelper);
+                size: ControlSize.md;
+                disabled: !review.read-to-end;
+
+                activated => {
+                    SignTx.sign-tx();
+                }
+            }
+        }
+
+        if signing: Ui2Button {
+            text: TR2.lookup(TrId.CommonSlideToSignSigning);
+            variant: ButtonVariant.tertiary;
+            size: ControlSize.md;
+            loading: true;
+            disabled: true;
+            full-width: true;
         }
     }
 }
