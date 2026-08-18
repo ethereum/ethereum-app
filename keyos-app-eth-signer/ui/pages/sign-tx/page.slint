@@ -17,6 +17,25 @@ import { SignTxProps } from "./props.slint";
 import { SignTx, SignTxState, SignRequestKind, EthTxView, EthTypedDataView, EthMessageView } from "../../sign-tx.slint";
 import { Navigate } from "../../gen/navigate.slint";
 
+// The swipeable cards fill everything the page does not need for its header,
+// subheader, pagination dots and button row, so a long message gets as much
+// of the 800px screen as possible. Every card on the page shares the height,
+// otherwise the pages of one Pagination would end at different offsets.
+global CardMetrics {
+    out property <length> width: 448px;
+    out property <length> height: 436px;
+    // The card plus the dots strip below it.
+    out property <length> page-height: height + 26px;
+    // The card's own padding, section title and the spacing under it: what a
+    // full-height inner field has to give up. 340px cards used to leave 280px.
+    out property <length> chrome: Size.sz15;
+    // Text width inside an inset field: the card padding and the field's own
+    // inset, Size.sz2 on each of the four edges. Kept as a constant rather
+    // than read back off the laid-out field, because measuring wrapped text
+    // against a width the layout produces is what made the viewport recurse.
+    out property <length> text-width: width - Size.sz2 * 4;
+}
+
 component CardSectionTitle inherits HorizontalLayout {
     padding-left: Size.sz2;
     padding-right: Size.sz2;
@@ -56,8 +75,8 @@ component TxMainCard inherits LineCard {
     in property <EthTxView> tx;
 
     card-color: CardColor.blue;
-    width: 448px;
-    height: 340px;
+    width: CardMetrics.width;
+    height: CardMetrics.height;
 
     VerticalLayout {
         alignment: start;
@@ -120,8 +139,8 @@ component TxFeesCard inherits LineCard {
     in property <EthTxView> tx;
 
     card-color: CardColor.blue;
-    width: 448px;
-    height: 340px;
+    width: CardMetrics.width;
+    height: CardMetrics.height;
 
     VerticalLayout {
         alignment: start;
@@ -166,8 +185,13 @@ component HashQrCard inherits LineCard {
     in property <string> value;
 
     card-color: CardColor.dark-grey;
-    width: 448px;
-    height: 340px;
+    width: CardMetrics.width;
+    height: CardMetrics.height;
+
+    property <length> hex-height: Size.sz15 + Size.sz6;
+    // The plate takes whatever the card has left under the hex rows, so the
+    // code grows with the card instead of leaving a gap at the bottom.
+    property <length> plate: root.height - CardMetrics.chrome - hex-height - Size.sz2_5;
 
     VerticalLayout {
         alignment: start;
@@ -183,7 +207,7 @@ component HashQrCard inherits LineCard {
         HexField {
             value: value;
             // 17 blocks of 4 -> three rows.
-            field-height: Size.sz15 + Size.sz6;
+            field-height: root.hex-height;
         }
 
         HorizontalLayout {
@@ -192,14 +216,14 @@ component HashQrCard inherits LineCard {
             // A white plate with a >=12px quiet zone; never scale or clip the
             // QR image itself or the finder patterns break.
             Rectangle {
-                width: 196px;
-                height: 196px;
+                width: root.plate;
+                height: root.plate;
                 background: Palette.white;
                 border-radius: Size.sz2;
 
                 Qrcode {
-                    width: 172px;
-                    height: 172px;
+                    width: root.plate - Size.sz6;
+                    height: root.plate - Size.sz6;
                     data: value;
                 }
             }
@@ -214,8 +238,15 @@ component ScrollTextCard inherits LineCard {
     in property <string> body;
 
     card-color: CardColor.blue;
-    width: 448px;
-    height: 340px;
+    // The card-wide TouchArea sits in front of everything; it would eat the
+    // drag before the Flickable below ever saw it.
+    touch-enabled: false;
+    width: CardMetrics.width;
+    height: CardMetrics.height;
+
+    // The scroll window: the inset field less the Flickable's own top and
+    // bottom inset.
+    property <length> view-height: root.height - CardMetrics.chrome - Size.sz2;
 
     VerticalLayout {
         alignment: start;
@@ -229,27 +260,43 @@ component ScrollTextCard inherits LineCard {
         }
 
         CardField {
-            height: 280px;
+            height: root.height - CardMetrics.chrome;
 
-            // Layout-driven viewport (the ScrollBody idiom): the wrapped
-            // text's real height flows through the VerticalLayout's preferred
-            // height, which a plain Text child would not report.
+            // Measures the wrapped body off-screen, at a constant width. A
+            // Text's preferred-height is a function of its width, so measuring
+            // against a width the layout hands down makes the viewport depend
+            // on the layout that depends on the viewport. Slint breaks that
+            // cycle silently -- the viewport stays at the visible height and
+            // nothing scrolls -- or panics with "Recursion detected" once
+            // anything else reads the value. The card is a fixed width, so the
+            // text width is knowable up front and the cycle never forms.
+            measure := TextSm {
+                x: -10000px;
+                y: -10000px;
+                width: CardMetrics.text-width;
+                text: body;
+                color: transparent;
+                wrap: word-wrap;
+            }
+
             flick := Flickable {
                 x: Size.sz2;
                 y: Size.sz1;
-                width: parent.width - Size.sz4;
-                height: parent.height - Size.sz2;
+                width: CardMetrics.text-width;
+                height: root.view-height;
                 viewport-width: self.width;
-                viewport-height: text-content.preferred-height;
+                // The trailing gap keeps the last line off the bottom edge
+                // once scrolled all the way down.
+                viewport-height: max(self.height, measure.preferred-height + Size.sz2);
 
-                text-content := VerticalLayout {
-                    width: flick.width;
-
-                    TextSm {
-                        text: body;
-                        color: Palette.content-primary;
-                        wrap: word-wrap;
-                    }
+                TextSm {
+                    x: 0;
+                    y: 0;
+                    width: CardMetrics.text-width;
+                    height: parent.viewport-height;
+                    text: body;
+                    color: Palette.content-primary;
+                    wrap: word-wrap;
                 }
             }
         }
@@ -327,27 +374,27 @@ component SignPage inherits VerticalLayout {
 
             if kind == SignRequestKind.Transaction: Pagination {
                 total-pages: tx.has-data ? 3 : 2;
-                height: 366px;
-                width: 448px;
+                height: CardMetrics.page-height;
+                width: CardMetrics.width;
                 page-spacing: Size.sz2_5;
                 dots-padding-top: Size.sz2;
 
                 VerticalLayout {
-                    width: 448px;
+                    width: CardMetrics.width;
                     TxMainCard {
                         tx: tx;
                     }
                 }
 
                 VerticalLayout {
-                    width: 448px;
+                    width: CardMetrics.width;
                     TxFeesCard {
                         tx: tx;
                     }
                 }
 
                 if tx.has-data: VerticalLayout {
-                    width: 448px;
+                    width: CardMetrics.width;
                     HashQrCard {
                         title: TR2.lookup(TrId.SignTxDataHashTitle);
                         value: tx.data-digest;
@@ -358,13 +405,13 @@ component SignPage inherits VerticalLayout {
             // Typed data: the scrollable message plus its ERC-8213 hashes.
             if typed: Pagination {
                 total-pages: 4;
-                height: 366px;
-                width: 448px;
+                height: CardMetrics.page-height;
+                width: CardMetrics.width;
                 page-spacing: Size.sz2_5;
                 dots-padding-top: Size.sz2;
 
                 VerticalLayout {
-                    width: 448px;
+                    width: CardMetrics.width;
                     ScrollTextCard {
                         title: TR2.lookup(TrId.SignTxMessageTitle);
                         body: td.json;
@@ -372,7 +419,7 @@ component SignPage inherits VerticalLayout {
                 }
 
                 VerticalLayout {
-                    width: 448px;
+                    width: CardMetrics.width;
                     HashQrCard {
                         title: TR2.lookup(TrId.SignTxEip712Digest);
                         value: td.eip712-digest;
@@ -380,7 +427,7 @@ component SignPage inherits VerticalLayout {
                 }
 
                 VerticalLayout {
-                    width: 448px;
+                    width: CardMetrics.width;
                     HashQrCard {
                         title: TR2.lookup(TrId.SignTxDomainHash);
                         value: td.domain-hash;
@@ -388,7 +435,7 @@ component SignPage inherits VerticalLayout {
                 }
 
                 VerticalLayout {
-                    width: 448px;
+                    width: CardMetrics.width;
                     HashQrCard {
                         title: TR2.lookup(TrId.SignTxMessageHash);
                         value: td.message-hash;
@@ -400,13 +447,13 @@ component SignPage inherits VerticalLayout {
             // ERC-8213 EIP-191 Digest.
             if message: Pagination {
                 total-pages: 2;
-                height: 366px;
-                width: 448px;
+                height: CardMetrics.page-height;
+                width: CardMetrics.width;
                 page-spacing: Size.sz2_5;
                 dots-padding-top: Size.sz2;
 
                 VerticalLayout {
-                    width: 448px;
+                    width: CardMetrics.width;
                     ScrollTextCard {
                         title: TR2.lookup(TrId.SignTxMessageTitle);
                         body: msg.text;
@@ -414,7 +461,7 @@ component SignPage inherits VerticalLayout {
                 }
 
                 VerticalLayout {
-                    width: 448px;
+                    width: CardMetrics.width;
                     HashQrCard {
                         title: TR2.lookup(TrId.SignTxEip191Digest);
                         value: msg.eip191-digest;
