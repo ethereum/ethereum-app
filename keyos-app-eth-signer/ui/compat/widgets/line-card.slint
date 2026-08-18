@@ -11,6 +11,7 @@ export component LineCard inherits Rectangle {
     height: 144px;
 
     in property <CardColor> card-color: CardColor.blue;
+    in property <bool> touch-enabled: true;
 
     out property <bool> pressed: touchArea.pressed;
 
@@ -83,7 +84,13 @@ export component LineCard inherits Rectangle {
         }
     }
 
+    // Declared after @children, so it sits in front of the whole card and, as
+    // Slint hit-tests front-to-back, it takes the press before anything the
+    // card contains. Cards holding their own interactive content (a Flickable,
+    // say) must turn it off or that content never sees a gesture.
     touchArea := TouchArea {
+        enabled: touch-enabled;
+
         clicked => {
             root.clicked();
         }
