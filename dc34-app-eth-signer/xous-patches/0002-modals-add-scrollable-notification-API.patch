@@ -1,0 +1,195 @@
+From 4a20e5b81d06d7e8505ca3a0b0333e2464e79eea Mon Sep 17 00:00:00 2001
+From: BTChip github <contact@btchip.com>
+Date: Sun, 16 Aug 2026 19:28:23 +0000
+Subject: [PATCH 2/2] modals: add scrollable notification API
+
+New Modals::show_scrollable(caption, text): a blocking notification whose
+body is rendered one line per row in a scrollable list (arrow keys
+scroll, any other key dismisses), for content that may be taller than
+the screen. Reuses the Bip39Display action (new set_lines method, no
+numbering) on baosec targets; gam targets fall back to a plain inline
+notification.
+---
+ libs/ux-api/src/widgets/bip39display.rs |  9 ++++
+ services/modals/src/api.rs              | 10 ++++
+ services/modals/src/lib.rs              | 17 +++++++
+ services/modals/src/main.rs             | 66 ++++++++++++++++++++++++-
+ 4 files changed, 101 insertions(+), 1 deletion(-)
+
+diff --git a/libs/ux-api/src/widgets/bip39display.rs b/libs/ux-api/src/widgets/bip39display.rs
+index 0a0137f96..3f9aa0369 100644
+--- a/libs/ux-api/src/widgets/bip39display.rs
++++ b/libs/ux-api/src/widgets/bip39display.rs
+@@ -26,6 +26,15 @@ impl Bip39Display {
+             self.items.add_item(0, &format!("{:2} {}", index + 1, word));
+         }
+     }
++
++    /// Arbitrary lines, without the bip39 numbering; used for any content that
++    /// may be taller than the screen (e.g. scrollable notifications).
++    pub fn set_lines<'a>(&mut self, lines: impl IntoIterator<Item = &'a str>) {
++        self.items.clear();
++        for line in lines {
++            self.items.add_item(0, line);
++        }
++    }
+ }
+ 
+ use crate::widgets::ActionApi;
+diff --git a/services/modals/src/api.rs b/services/modals/src/api.rs
+index f932aeccc..68154b0ee 100644
+--- a/services/modals/src/api.rs
++++ b/services/modals/src/api.rs
+@@ -49,6 +49,14 @@ pub struct ManagedNotification {
+     pub qrtext: Option<String>,
+ }
+ 
++#[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone)]
++pub struct ManagedScrollable {
++    pub token: [u32; 4],
++    pub caption: Option<String>,
++    /// shown one line per row in a scrollable list
++    pub text: String,
++}
++
+ #[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone)]
+ pub struct ManagedBip39 {
+     pub token: [u32; 4],
+@@ -111,6 +119,8 @@ pub(crate) enum Opcode {
+     Bip39Return = 33, // ----- note op number
+     SliderReturn = 34,
+     Slider = 35,
++    /// notification whose body is a scrollable line list (arrows scroll, any other key dismisses)
++    ScrollableNotification = 36,
+     /// display an image
+     #[cfg(feature = "ditherpunk")]
+     Image = 3,
+diff --git a/services/modals/src/lib.rs b/services/modals/src/lib.rs
+index 06fc4b9a1..ab7851d73 100644
+--- a/services/modals/src/lib.rs
++++ b/services/modals/src/lib.rs
+@@ -248,6 +248,23 @@ impl Modals {
+         Ok(())
+     }
+ 
++    /// Blocking notification whose body is shown one line per row in a scrollable
++    /// list: the arrow keys scroll, any other key dismisses. Use this instead of
++    /// `show_notification` whenever the text may be taller than the screen.
++    pub fn show_scrollable(&self, caption: Option<&str>, text: &str) -> Result<(), xous::Error> {
++        self.lock();
++        let spec = ManagedScrollable {
++            token: self.token,
++            caption: caption.map(String::from),
++            text: String::from(text),
++        };
++        let buf = Buffer::into_buf(spec).or(Err(xous::Error::InternalError))?;
++        buf.lend(self.conn, Opcode::ScrollableNotification.to_u32().unwrap())
++            .or(Err(xous::Error::InternalError))?;
++        self.unlock();
++        Ok(())
++    }
++
+     /// Modal dialog used to show up to 256 bits of `data` in bip39 format.
+     ///
+     /// - This dialog blocks until the notification has been acknowledged via [ Press any key ].
+diff --git a/services/modals/src/main.rs b/services/modals/src/main.rs
+index 9cf133730..7b5cdc83b 100644
+--- a/services/modals/src/main.rs
++++ b/services/modals/src/main.rs
+@@ -66,6 +66,7 @@ enum RendererState {
+     RunText(ManagedPromptWithTextResponse),
+     RunProgress(ManagedProgress),
+     RunNotification(ManagedNotification),
++    RunScrollable(ManagedScrollable),
+     RunBip39(ManagedBip39),
+     RunBip39Input(ManagedBip39),
+     RunDynamicNotification(DynamicNotification),
+@@ -271,6 +272,23 @@ fn wrapped_main() -> ! {
+                 )
+                 .expect("couldn't initiate UX op");
+             }
++            Some(Opcode::ScrollableNotification) => {
++                let spec = {
++                    let buffer = unsafe { Buffer::from_memory_message(msg.body.memory_message().unwrap()) };
++                    buffer.to_original::<ManagedScrollable, _>().unwrap()
++                };
++                if spec.token != token_lock.unwrap_or(default_nonce) {
++                    log::warn!("Attempt to access modals without a mutex lock. Ignoring.");
++                    continue;
++                }
++                op = RendererState::RunScrollable(spec);
++                dr = Some(msg);
++                send_message(
++                    renderer_cid,
++                    Message::new_scalar(Opcode::InitiateOp.to_usize().unwrap(), 0, 0, 0, 0),
++                )
++                .expect("couldn't initiate UX op");
++            }
+             Some(Opcode::Bip39) => {
+                 let spec = {
+                     let buffer = unsafe { Buffer::from_memory_message(msg.body.memory_message().unwrap()) };
+@@ -527,6 +545,50 @@ fn wrapped_main() -> ! {
+                         );
+                         renderer_modal.activate();
+                     }
++                    RendererState::RunScrollable(config) => {
++                        // scrollable line list on small screens; on gam targets fall back
++                        // to a plain notification with the text inline
++                        #[cfg(any(feature = "hosted-baosec", feature = "bao1x"))]
++                        {
++                            let mut scroll_display = Bip39Display::new(
++                                renderer_cid,
++                                Opcode::NotificationReturn.to_u32().unwrap(),
++                            );
++                            scroll_display.set_lines(config.text.lines());
++                            let caption = config.caption.as_ref().map(|c| c.as_str());
++                            renderer_modal.modify(
++                                Some(ActionType::Bip39Display(scroll_display)),
++                                caption,
++                                caption.is_none(),
++                                None,
++                                true,
++                                Some(GlyphStyle::Bold),
++                            );
++                            renderer_modal.activate();
++                        }
++                        #[cfg(not(any(feature = "hosted-baosec", feature = "bao1x")))]
++                        {
++                            let notification = Notification::new(
++                                renderer_cid,
++                                Opcode::NotificationReturn.to_u32().unwrap(),
++                            );
++                            let mut text = String::new();
++                            if let Some(c) = &config.caption {
++                                text.push_str(c.as_str());
++                                text.push_str("\n\n");
++                            }
++                            text.push_str(&config.text);
++                            renderer_modal.modify(
++                                Some(ActionType::Notification(notification)),
++                                Some(&text),
++                                false,
++                                None,
++                                true,
++                                Some(GlyphStyle::Bold),
++                            );
++                            renderer_modal.activate();
++                        }
++                    }
+                     RendererState::RunBip39(config) => {
+                         // on small screens the phrase won't fit in a static notification, so
+                         // present it as a scrollable word list: arrow keys scroll, any other
+@@ -899,7 +961,9 @@ fn wrapped_main() -> ! {
+             }),
+             Some(Opcode::NotificationReturn) => {
+                 match op {
+-                    RendererState::RunNotification(_) | RendererState::RunBip39(_) => {
++                    RendererState::RunNotification(_)
++                    | RendererState::RunScrollable(_)
++                    | RendererState::RunBip39(_) => {
+                         op = RendererState::None;
+                         dr.take(); // unblocks the caller, but without any response data
+                         token_lock = next_lock(&mut work_queue);
+-- 
+2.43.0
+
