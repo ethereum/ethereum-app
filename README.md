@@ -18,6 +18,14 @@ In this version the signer is airgapped using [ERC-4527](https://github.com/ethe
 
 Future versions will implement different bearers and optionally [Clear Signing](https://clearsigning.org/), with additional third party dependencies
 
+## dc34-app-eth-signer
+
+An implementation of the signer for the [Xous microkernel](https://github.com/betrusted-io/xous-core) running of the [Def Con 34 badge](https://defcon.org/34b/) (baosec-lite)
+
+In this version the signer is airgapped using [ERC-4527](https://github.com/ethereum/ercs/blob/master/ERCS/erc-4527.md) QR codes and implements [Verifiable Signing](verifiable_signing/README.md) using [ERC-8213](https://erc8213.eth.limo/) - it has no dependencies whatsoever on any external data source.  
+
+Future versions will implement different bearers and optionally [Clear Signing](https://clearsigning.org/), with additional third party dependencies
+
 ## Security
 
 See [SECURITY.md](SECURITY.md) for up to date information
