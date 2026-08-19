@@ -1,0 +1,233 @@
+From 3953d51598ac5a202b8358def505a807b43e9a82 Mon Sep 17 00:00:00 2001
+From: BTChip github <contact@btchip.com>
+Date: Sun, 16 Aug 2026 16:41:35 +0200
+Subject: [PATCH 1/2] Add bip39display
+
+---
+ libs/ux-api/src/widgets/action.rs       |   2 +
+ libs/ux-api/src/widgets/bip39display.rs |  68 ++++++++++++++++
+ libs/ux-api/src/widgets/mod.rs          |   2 +
+ services/modals/src/main.rs             | 101 ++++++++++++++++--------
+ 4 files changed, 141 insertions(+), 32 deletions(-)
+ create mode 100644 libs/ux-api/src/widgets/bip39display.rs
+
+diff --git a/libs/ux-api/src/widgets/action.rs b/libs/ux-api/src/widgets/action.rs
+index 15694e583..830b265cb 100644
+--- a/libs/ux-api/src/widgets/action.rs
++++ b/libs/ux-api/src/widgets/action.rs
+@@ -8,6 +8,8 @@ pub enum ActionType {
+     TextEntry(TextEntry),
+     #[cfg(feature = "bip39entry")]
+     Bip39Entry(Bip39Entry),
++    #[cfg(feature = "bip39entry")]
++    Bip39Display(Bip39Display),
+     #[cfg(feature = "radiobuttons")]
+     RadioButtons(RadioButtons),
+     #[cfg(feature = "checkboxes")]
+diff --git a/libs/ux-api/src/widgets/bip39display.rs b/libs/ux-api/src/widgets/bip39display.rs
+new file mode 100644
+index 000000000..0a0137f96
+--- /dev/null
++++ b/libs/ux-api/src/widgets/bip39display.rs
+@@ -0,0 +1,68 @@
++use super::*;
++use crate::minigfx::*;
++use crate::widgets::ScrollableList;
++
++/// Read-only, scrollable display of a BIP-39 phrase. The word list is rendered with
++/// one numbered word per row inside a `ScrollableList` (the same widget that backs
++/// `Bip39Entry`'s word picker), so phrases that don't fit on small screens can be
++/// scrolled through with the arrow keys instead of overflowing into the dismissal
++/// affordance. Any non-arrow key dismisses the modal.
++pub struct Bip39Display {
++    pub items: ScrollableList,
++    pub action_conn: xous::CID,
++    pub action_opcode: u32,
++}
++
++impl Bip39Display {
++    pub fn new(action_conn: xous::CID, action_opcode: u32) -> Self {
++        let mut items = ScrollableList::default();
++        items.set_margin(Point::new(4, 0));
++        Bip39Display { items, action_conn, action_opcode }
++    }
++
++    pub fn set_words(&mut self, words: &[String]) {
++        self.items.clear();
++        for (index, word) in words.iter().enumerate() {
++            self.items.add_item(0, &format!("{:2} {}", index + 1, word));
++        }
++    }
++}
++
++use crate::widgets::ActionApi;
++impl ActionApi for Bip39Display {
++    fn height(&self, _glyph_height: isize, _margin: isize, _modal: &Modal) -> isize {
++        // the word list claims the entire canvas below the caption
++        crate::minigfx::op::HEIGHT
++    }
++
++    fn redraw(&self, at_height: isize, _modal: &Modal) {
++        // ScrollableList repaints its own pane, so no explicit clearing is needed here
++        self.items.draw(at_height);
++    }
++
++    fn key_action(&mut self, k: char) -> Option<ValidatorErr> {
++        log::trace!("key_action: {}", k);
++        match k {
++            '\u{0}' => {
++                // ignore null messages
++            }
++            '↑' | '↓' | '←' | '→' => {
++                self.items.key_action(k);
++            }
++            _ => {
++                // relinquish focus before returning the result
++                self.items.gfx.release_modal().unwrap();
++                xous::yield_slice();
++
++                xous::send_message(
++                    self.action_conn,
++                    xous::Message::new_scalar(self.action_opcode as usize, k as u32 as usize, 0, 0, 0),
++                )
++                .expect("couldn't pass on dismissal");
++            }
++        }
++        None
++    }
++
++    fn set_action_opcode(&mut self, op: u32) { self.action_opcode = op }
++}
+diff --git a/libs/ux-api/src/widgets/mod.rs b/libs/ux-api/src/widgets/mod.rs
+index d34f08f98..a86c86384 100644
+--- a/libs/ux-api/src/widgets/mod.rs
++++ b/libs/ux-api/src/widgets/mod.rs
+@@ -13,6 +13,8 @@ pub mod notification;
+ pub use notification::*;
+ pub mod bip39entry;
+ pub use bip39entry::*;
++pub mod bip39display;
++pub use bip39display::*;
+ pub mod radiobuttons;
+ pub use radiobuttons::*;
+ pub mod checkboxes;
+diff --git a/services/modals/src/main.rs b/services/modals/src/main.rs
+index 69a44a684..9cf133730 100644
+--- a/services/modals/src/main.rs
++++ b/services/modals/src/main.rs
+@@ -528,43 +528,80 @@ fn wrapped_main() -> ! {
+                         renderer_modal.activate();
+                     }
+                     RendererState::RunBip39(config) => {
+-                        let notification =
+-                            Notification::new(renderer_cid, Opcode::NotificationReturn.to_u32().unwrap());
+-                        let mut text = String::new();
+-                        if let Some(c) = &config.caption {
+-                            text.push_str(c.as_str());
+-                            text.push_str("\n\n");
+-                        }
+-
++                        // on small screens the phrase won't fit in a static notification, so
++                        // present it as a scrollable word list: arrow keys scroll, any other
++                        // key dismisses
+                         #[cfg(any(feature = "hosted-baosec", feature = "bao1x"))]
+-                        let phrase = ux_api::widgets::bytes_to_bip39(
+-                            &config.bip39_data[..config.bip39_len as usize].to_vec(),
+-                        )
+-                        .unwrap_or(vec![t!("bip39.invalid_bytes", locales::LANG).to_string()]);
+-                        #[cfg(not(any(feature = "hosted-baosec", feature = "bao1x")))]
+-                        let phrase = renderer_modal
+-                            .gam
+-                            .bytes_to_bip39(&config.bip39_data[..config.bip39_len as usize].to_vec())
++                        {
++                            let phrase = ux_api::widgets::bytes_to_bip39(
++                                &config.bip39_data[..config.bip39_len as usize].to_vec(),
++                            )
+                             .unwrap_or(vec![t!("bip39.invalid_bytes", locales::LANG).to_string()]);
+-                        #[cfg(feature = "hazardous-debug")]
+-                        log::info!("BIP-39 phrase: {:?}", phrase);
++                            #[cfg(feature = "hazardous-debug")]
++                            log::info!("BIP-39 phrase: {:?}", phrase);
++
++                            #[cfg(feature = "tts")]
++                            {
++                                let mut spoken = String::new();
++                                for word in phrase.iter() {
++                                    spoken.push_str(word);
++                                    spoken.push_str(" ");
++                                }
++                                tts.tts_simple(&spoken).unwrap();
++                            }
+ 
+-                        for word in phrase {
+-                            text.push_str(&word);
+-                            text.push_str(" ");
++                            let mut b39display = Bip39Display::new(
++                                renderer_cid,
++                                Opcode::NotificationReturn.to_u32().unwrap(),
++                            );
++                            b39display.set_words(&phrase);
++                            let caption = config.caption.as_ref().map(|c| c.as_str());
++                            renderer_modal.modify(
++                                Some(ActionType::Bip39Display(b39display)),
++                                caption,
++                                caption.is_none(),
++                                None,
++                                true,
++                                Some(GlyphStyle::Bold),
++                            );
++                            renderer_modal.activate();
+                         }
++                        #[cfg(not(any(feature = "hosted-baosec", feature = "bao1x")))]
++                        {
++                            let notification = Notification::new(
++                                renderer_cid,
++                                Opcode::NotificationReturn.to_u32().unwrap(),
++                            );
++                            let mut text = String::new();
++                            if let Some(c) = &config.caption {
++                                text.push_str(c.as_str());
++                                text.push_str("\n\n");
++                            }
+ 
+-                        #[cfg(feature = "tts")]
+-                        tts.tts_simple(&text).unwrap();
+-                        renderer_modal.modify(
+-                            Some(ActionType::Notification(notification)),
+-                            Some(&text),
+-                            false,
+-                            None,
+-                            true,
+-                            Some(GlyphStyle::Bold),
+-                        );
+-                        renderer_modal.activate();
++                            let phrase = renderer_modal
++                                .gam
++                                .bytes_to_bip39(&config.bip39_data[..config.bip39_len as usize].to_vec())
++                                .unwrap_or(vec![t!("bip39.invalid_bytes", locales::LANG).to_string()]);
++                            #[cfg(feature = "hazardous-debug")]
++                            log::info!("BIP-39 phrase: {:?}", phrase);
++
++                            for word in phrase {
++                                text.push_str(&word);
++                                text.push_str(" ");
++                            }
++
++                            #[cfg(feature = "tts")]
++                            tts.tts_simple(&text).unwrap();
++                            renderer_modal.modify(
++                                Some(ActionType::Notification(notification)),
++                                Some(&text),
++                                false,
++                                None,
++                                true,
++                                Some(GlyphStyle::Bold),
++                            );
++                            renderer_modal.activate();
++                        }
+                     }
+                     RendererState::RunBip39Input(config) => {
+                         let b39input =
+-- 
+2.43.0
+

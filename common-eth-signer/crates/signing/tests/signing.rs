@@ -192,3 +192,39 @@ fn sign_eip1559_recovers_signer() {
     assert!(v <= 1, "typed tx uses y-parity 0/1");
     assert_eq!(recover(signing_hash(&req).as_slice(), &sig, v as u8), EXPECTED);
 }
+
+#[test]
+fn account_key_matches_direct_derivation() {
+    use signer_core::request::{ChildNumber, DerivationPath};
+    use signer_signing::AccountKey;
+
+    let entropy = [0u8; 16]; // abandon x11 + about
+    let account_path = DerivationPath {
+        components: vec![
+            ChildNumber { index: 44, hardened: true },
+            ChildNumber { index: 60, hardened: true },
+            ChildNumber { index: 0, hardened: true },
+        ],
+    };
+    let account = AccountKey::from_entropy(&entropy, &account_path).unwrap();
+    // master fingerprint of the standard "abandon ... about" mnemonic
+    assert_eq!(account.master_fingerprint(), 0x73c5da0a);
+    // address 0/0 must equal the full-path derivation used for signing
+    let full_path = DerivationPath {
+        components: vec![
+            ChildNumber { index: 44, hardened: true },
+            ChildNumber { index: 60, hardened: true },
+            ChildNumber { index: 0, hardened: true },
+            ChildNumber { index: 0, hardened: false },
+            ChildNumber { index: 0, hardened: false },
+        ],
+    };
+    let direct = signer_signing::address_of(&signer_signing::key_from_entropy(&entropy, &full_path).unwrap());
+    assert_eq!(account.address(0, 0).unwrap(), direct);
+    assert_eq!(
+        account.address(0, 0).unwrap().to_checksum(None),
+        "0x9858EfFD232B4033E47d90003D41EC34EcaEda94"
+    );
+    // different indexes give different addresses
+    assert_ne!(account.address(0, 1).unwrap(), account.address(0, 0).unwrap());
+}

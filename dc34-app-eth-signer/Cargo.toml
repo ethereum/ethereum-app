@@ -1,0 +1,90 @@
+[package]
+name = "dc34-eth-signer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+log = "0.4.14"
+num-derive = { version = "0.4.2", default-features = false }
+num-traits = { version = "0.2.14", default-features = false }
+xous = "0.9.70"
+log-server = { package = "xous-api-log", version = "0.1.69" }
+xous-names = { package = "xous-api-names", version = "0.9.71" }
+ticktimer-server = { package = "xous-api-ticktimer", version = "0.9.70" }
+# protocol constants for dc34-console (power manager / watchdog handshake, server name)
+dc34-api = { path = "../dc34-api" }
+
+# Ethereum signing stack (BIP-39/32 derivation, ERC-4527 CBOR codecs)
+signer-core = { path = "../common-eth-signer/crates/core" }
+signer-signing = { path = "../common-eth-signer/crates/signing" }
+signer-decoding = { path = "../common-eth-signer/crates/decoding" }
+serde_json = "1"
+
+pddb = { git = "https://github.com/betrusted-io/xous-core", rev = "616bf65f6e379165464f50b1e79ec42aff77a683" }
+modals = { git = "https://github.com/betrusted-io/xous-core", rev = "616bf65f6e379165464f50b1e79ec42aff77a683", features = [
+    "no-gam",
+] }
+ux-api = { git = "https://github.com/betrusted-io/xous-core", rev = "616bf65f6e379165464f50b1e79ec42aff77a683" }
+bao1x-hal-service = { git = "https://github.com/betrusted-io/xous-core", rev = "616bf65f6e379165464f50b1e79ec42aff77a683", optional = true }
+bao1x-emu = { git = "https://github.com/betrusted-io/xous-core", rev = "616bf65f6e379165464f50b1e79ec42aff77a683", optional = true }
+blitstr2 = { git = "https://github.com/betrusted-io/xous-core", rev = "616bf65f6e379165464f50b1e79ec42aff77a683", features = [
+    "bao1x",
+] }
+# not used directly: bao1x-hal needs utralib's std-gated types (AtomicCsr), and only
+# feature unification from a direct dep can turn "utralib/std" on for it
+utralib = { version = "0.1.27", optional = true, default-features = false }
+# swap-encryption bring-up at boot (board only; its ensure_swap_encryption is cfg(swap))
+keystore = { git = "https://github.com/betrusted-io/xous-core", rev = "616bf65f6e379165464f50b1e79ec42aff77a683", optional = true }
+
+[patch.crates-io.getrandom]
+git = "https://github.com/betrusted-io/xous-core"
+rev = "616bf65f6e379165464f50b1e79ec42aff77a683"
+
+[patch.crates-io.aes]
+path = "../xous-core/services/aes"
+
+[patch."https://github.com/betrusted-io/xous-core"]
+bao1x-hal = { path = "../xous-core/libs/bao1x-hal" }
+bao1x-hal-service = { path = "../xous-core/services/bao1x-hal-service" }
+bao1x-api = { path = "../xous-core/libs/bao1x-api" }
+bao1x-emu = { path = "../xous-core/services/bao1x-emu" }
+modals = { path = "../xous-core/services/modals" }
+ux-api = { path = "../xous-core/libs/ux-api" }
+bio-lib = { path = "../xous-core/libs/bio-lib" }
+xous-api-susres = { path = "../xous-core/api/xous-api-susres" }
+blitstr2 = { path = "../xous-core/libs/blitstr2" }
+pddb = { path = "../xous-core/services/pddb" }
+keystore-api = { path = "../xous-core/libs/keystore-api" }
+keystore = { path = "../xous-core/services/keystore" }
+
+[features]
+board-baosec = [
+    "bao1x-hal-service",
+    "keystore",
+    "utralib/bao1x",
+    "utralib/std",
+    "pddb/board-baosec",
+    "modals/board-baosec",
+    "ux-api/board-baosec",
+    "ux-api/bip39entry",
+    "blitstr2/board-baosec",
+]
+hosted-baosec = [
+    "bao1x-emu",
+    "utralib/hosted",
+    "utralib/std",
+    "pddb/hosted-baosec",
+    "modals/hosted-baosec",
+    "ux-api/hosted-baosec",
+    "ux-api/bip39entry",
+    "blitstr2/hosted-baosec",
+]
+default = []
+
+[profile.release]
+codegen-units = 1
+debug = false
+strip = false
+lto = "fat"
+incremental = true
+opt-level = "s"

@@ -5,7 +5,7 @@ mod seed;
 mod sign;
 
 pub use hashing::signing_hash;
-pub use seed::{address_of, key_from_entropy};
+pub use seed::{AccountKey, address_of, key_from_entropy};
 pub use sign::sign_request;
 
 /// The secp256k1 signing key type used across the workspace.

@@ -1,0 +1,1195 @@
+use std::cell::RefCell;
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
+use std::thread;
+
+#[cfg(feature = "hosted-baosec")]
+use bao1x_emu::trng::Trng;
+#[cfg(feature = "board-baosec")]
+use bao1x_hal_service::trng::Trng;
+use num_traits::*;
+use ux_api::widgets::TextEntryPayload;
+use xous::{Message, send_message};
+
+use signer_core::alloy_primitives::{B256, U256};
+use signer_core::request::{
+    ChildNumber, DerivationPath, MessageKind, PersonalMessage, SignRequest, TxDisplay, TypedData712,
+};
+use signer_signing::AccountKey;
+
+use crate::api::{ActionOp, MainOp};
+use crate::storage::{Account, MAX_ACCOUNT_INDEX, MAX_ACCOUNT_NAME_LEN, MAX_SEED_NAME_LEN, SeedStore};
+use crate::ur::{UrDecoder, UrEvent, ur_encode_single};
+
+/// How many addresses (indexes 0..N at change 0) are derived when verifying
+/// whether a scanned address belongs to an account.
+const ADDRESS_SCAN_COUNT: u32 = 50;
+
+const GENERATE_ENTRY: &str = "[ Generate new seed ]";
+const IMPORT_ENTRY: &str = "[ Import seed ]";
+const SHOW_WORDS_PROMPT: &str = "Record these words in order";
+
+/// Spawn the actions thread: it owns its own server plus all blocking modal calls, so the
+/// main loop stays free to service redraws and menu keys while a modal flow is running.
+pub fn spawn_actions(
+    main_conn: xous::CID,
+    sid: xous::SID,
+    selected_seed: Arc<Mutex<Option<String>>>,
+    action_active: Arc<AtomicBool>,
+) {
+    let _ = thread::spawn(move || {
+        let mut manager = ActionManager::new(main_conn, selected_seed, action_active);
+        loop {
+            let msg = xous::receive_message(sid).unwrap();
+            let opcode: Option<ActionOp> = FromPrimitive::from_usize(msg.body.id());
+            log::debug!("action op: {:?}", opcode);
+            match opcode {
+                Some(ActionOp::Startup) => {
+                    manager.activate();
+                    manager.startup_flow();
+                    manager.deactivate();
+                }
+                Some(ActionOp::SeedMenu) => {
+                    manager.activate();
+                    manager.seed_menu_flow();
+                    manager.deactivate();
+                }
+                Some(ActionOp::AccountMenu) => {
+                    manager.activate();
+                    manager.account_menu_flow();
+                    manager.deactivate();
+                }
+                Some(ActionOp::ScanRequest) => {
+                    manager.activate();
+                    manager.scan_request_flow();
+                    manager.deactivate();
+                }
+                Some(ActionOp::MenuClose) => {
+                    manager.activate();
+                    manager.deactivate();
+                }
+                Some(ActionOp::Quit) => break,
+                None => log::error!("msg could not be decoded {:?}", msg),
+            }
+        }
+        xous::destroy_server(sid).ok();
+    });
+}
+
+struct ActionManager {
+    modals: modals::Modals,
+    store: SeedStore,
+    trng: RefCell<Trng>,
+    gfx: ux_api::service::gfx::Gfx,
+    tt: ticktimer_server::Ticktimer,
+    main_conn: xous::CID,
+    selected_seed: Arc<Mutex<Option<String>>>,
+    action_active: Arc<AtomicBool>,
+}
+
+impl ActionManager {
+    fn new(
+        main_conn: xous::CID,
+        selected_seed: Arc<Mutex<Option<String>>>,
+        action_active: Arc<AtomicBool>,
+    ) -> Self {
+        let xns = xous_names::XousNames::new().unwrap();
+        ActionManager {
+            modals: modals::Modals::new(&xns).unwrap(),
+            store: SeedStore::new(),
+            trng: RefCell::new(Trng::new(&xns).unwrap()),
+            gfx: ux_api::service::gfx::Gfx::new(&xns).unwrap(),
+            tt: ticktimer_server::Ticktimer::new().unwrap(),
+            main_conn,
+            selected_seed,
+            action_active,
+        }
+    }
+
+    fn activate(&self) {
+        self.action_active.store(true, Ordering::SeqCst);
+    }
+
+    fn deactivate(&self) {
+        self.action_active.store(false, Ordering::SeqCst);
+        send_message(self.main_conn, Message::new_scalar(MainOp::Redraw.to_usize().unwrap(), 0, 0, 0, 0))
+            .ok();
+    }
+
+    /// Radio-button helper; None means the user aborted the modal.
+    fn radio(&self, prompt: &str, items: &[&str]) -> Option<String> {
+        for item in items {
+            self.modals.add_list_item(item).ok()?;
+        }
+        self.modals.get_radiobutton(prompt).ok()
+    }
+
+    /// Make `name` the active seed, both in shared state and persistently.
+    fn select_and_persist(&self, name: &str) {
+        *self.selected_seed.lock().unwrap() = Some(name.to_string());
+        if let Err(e) = self.store.save_selected_seed(name) {
+            // selection still works for this session; only the persistence failed
+            log::error!("couldn't persist seed selection: {:?}", e);
+        }
+    }
+
+    pub fn startup_flow(&mut self) {
+        log::info!("startup: loading persisted selection");
+        // restore the last selection silently; the menu can change it at any time
+        if let Some(name) = self.store.load_selected_seed() {
+            log::info!("restored persisted seed selection '{}'", name);
+            *self.selected_seed.lock().unwrap() = Some(name);
+            return;
+        }
+        log::info!("startup: no persisted selection, listing seeds");
+        if self.store.list_seeds().is_empty() {
+            match self.radio("No seeds found", &["Generate new seed", "Import seed", "Later"]).as_deref() {
+                Some("Generate new seed") => self.generate_seed_flow(),
+                Some("Import seed") => self.import_seed_flow(),
+                _ => {}
+            }
+        } else {
+            self.select_seed_flow();
+        }
+    }
+
+    pub fn seed_menu_flow(&mut self) {
+        match self.radio("Seed", &["Select seed", "New seed", "Import seed", "Back"]).as_deref() {
+            Some("Select seed") => self.select_seed_flow(),
+            Some("New seed") => self.generate_seed_flow(),
+            Some("Import seed") => self.import_seed_flow(),
+            _ => {} // Back or aborted
+        }
+    }
+
+    pub fn select_seed_flow(&mut self) {
+        for name in self.store.list_seeds() {
+            self.modals.add_list_item(&name).ok();
+        }
+        self.modals.add_list_item(GENERATE_ENTRY).ok();
+        self.modals.add_list_item(IMPORT_ENTRY).ok();
+        match self.modals.get_radiobutton("Select seed") {
+            Ok(sel) if sel == GENERATE_ENTRY => self.generate_seed_flow(),
+            Ok(sel) if sel == IMPORT_ENTRY => self.import_seed_flow(),
+            Ok(sel) => {
+                self.select_and_persist(&sel);
+                self.modals.show_notification(&format!("Selected seed:\n{}", sel), None).ok();
+            }
+            Err(_) => {} // user aborted; no state change
+        }
+    }
+
+    pub fn generate_seed_flow(&mut self) {
+        let n_bytes = match self.radio("Seed length", &["12 words", "24 words"]).as_deref() {
+            Some("12 words") => 16,
+            Some("24 words") => 32,
+            _ => return,
+        };
+        let mut entropy = vec![0u8; n_bytes];
+        self.trng.borrow_mut().fill_bytes_via_next(&mut entropy);
+
+        self.modals.show_bip39(Some(SHOW_WORDS_PROMPT), &entropy).ok();
+
+        if self.confirm_backup(&entropy) {
+            self.name_and_store(&mut entropy, "created");
+        } else {
+            self.modals.show_notification("Seed creation aborted.\nNothing was saved.", None).ok();
+            zeroize(&mut entropy);
+        }
+    }
+
+    pub fn import_seed_flow(&mut self) {
+        match self.modals.input_bip39(Some("Enter seed phrase")) {
+            Ok(mut entropy) => self.name_and_store(&mut entropy, "imported"),
+            Err(_) => {} // user aborted entry
+        }
+    }
+
+    /// Ask the user to re-enter the phrase they just saw, proving it was backed up.
+    fn confirm_backup(&mut self, entropy: &Vec<u8>) -> bool {
+        loop {
+            match self.modals.input_bip39(Some("Re-enter phrase to confirm backup")) {
+                Ok(mut entered) => {
+                    let ok = entered == *entropy;
+                    zeroize(&mut entered);
+                    if ok {
+                        return true;
+                    }
+                }
+                Err(_) => {} // aborted entry: fall through to the retry menu
+            }
+            match self
+                .radio("Backup not confirmed", &["Try again", "Show words again", "Abort creation"])
+                .as_deref()
+            {
+                Some("Try again") => {}
+                Some("Show words again") => {
+                    self.modals.show_bip39(Some(SHOW_WORDS_PROMPT), entropy).ok();
+                }
+                _ => return false,
+            }
+        }
+    }
+
+    /// Shared tail of the generate/import flows: name the seed, store it, select it.
+    /// Zeroes the entropy buffer on every exit path.
+    fn name_and_store(&mut self, entropy: &mut Vec<u8>, verb: &str) {
+        loop {
+            let name = match self.prompt_seed_name() {
+                Some(n) => n,
+                None => {
+                    self.modals.show_notification("Aborted.\nNothing was saved.", None).ok();
+                    break;
+                }
+            };
+            let result = if self.store.seed_exists(&name) {
+                match self
+                    .radio(
+                        &format!("'{}' already exists", name),
+                        &["Pick another name", "Overwrite existing", "Abort"],
+                    )
+                    .as_deref()
+                {
+                    Some("Pick another name") => continue,
+                    Some("Overwrite existing") => self.store.replace_seed(&name, entropy),
+                    _ => {
+                        self.modals.show_notification("Aborted.\nNothing was saved.", None).ok();
+                        break;
+                    }
+                }
+            } else {
+                self.store.store_seed(&name, entropy)
+            };
+            match result {
+                Ok(()) => {
+                    self.select_and_persist(&name);
+                    self.modals
+                        .show_notification(&format!("Seed '{}' {} and selected", name, verb), None)
+                        .ok();
+                }
+                Err(e) => {
+                    self.modals.show_notification(&format!("Error saving seed:\n{:?}", e), None).ok();
+                }
+            }
+            break;
+        }
+        zeroize(entropy);
+    }
+
+    fn prompt_seed_name(&self) -> Option<String> {
+        match self.modals.alert_builder("Name this seed:").field(None, Some(seed_name_validator)).build() {
+            Ok(text) => Some(text.first().as_str().trim().to_string()),
+            Err(_) => None, // user aborted
+        }
+    }
+
+    pub fn account_menu_flow(&mut self) {
+        let seed = match self.selected_seed.lock().unwrap().clone() {
+            Some(s) => s,
+            None => {
+                self.modals.show_notification("Select a seed first", None).ok();
+                return;
+            }
+        };
+        match self.radio("Accounts", &["Display accounts", "New account", "Delete account"]).as_deref() {
+            Some("Display accounts") => self.display_accounts_flow(&seed),
+            Some("New account") => self.create_account_flow(&seed),
+            Some("Delete account") => self.delete_account_flow(&seed),
+            _ => {} // user aborted
+        }
+    }
+
+    fn display_accounts_flow(&mut self, seed: &str) {
+        let accounts = self.store.list_accounts(seed);
+        if accounts.is_empty() {
+            if let Some("Create account") =
+                self.radio("No accounts yet", &["Create account", "Cancel"]).as_deref()
+            {
+                self.create_account_flow(seed);
+            }
+            return;
+        }
+        for a in accounts.iter() {
+            self.modals.add_list_item(&a.display()).ok();
+        }
+        match self.modals.get_radiobutton("Display accounts") {
+            Ok(sel) => {
+                if let Some(a) = accounts.iter().find(|a| a.display() == sel) {
+                    self.account_actions_flow(seed, &a.clone());
+                }
+            }
+            Err(_) => {} // user aborted
+        }
+    }
+
+    fn create_account_flow(&mut self, seed: &str) {
+        let accounts = self.store.list_accounts(seed);
+        let first_free = SeedStore::first_free_index(&accounts);
+        let first_free_label = format!("Use #{} (first available)", first_free);
+        let index = loop {
+            match self.radio("Account number", &[&first_free_label, "Choose a number"]).as_deref() {
+                Some("Choose a number") => match self.prompt_account_number() {
+                    Some(n) => {
+                        if accounts.iter().any(|a| a.index == n) {
+                            self.modals
+                                .show_notification(&format!("Account #{} already exists", n), None)
+                                .ok();
+                            continue;
+                        }
+                        break n;
+                    }
+                    None => return, // aborted
+                },
+                Some(sel) if sel == first_free_label => break first_free,
+                _ => return, // aborted
+            }
+        };
+        let name = self.prompt_account_name(index);
+        let account = Account { index, name };
+        // uniqueness is re-checked inside add_account, so a race with nothing can't corrupt
+        match self.store.add_account(seed, account.clone()) {
+            Ok(()) => {
+                self.modals
+                    .show_notification(
+                        &format!("Account '{}'\n{}\ncreated", account.name, account.path()),
+                        None,
+                    )
+                    .ok();
+            }
+            Err(e) => {
+                self.modals.show_notification(&format!("Error saving account:\n{:?}", e), None).ok();
+            }
+        }
+    }
+
+    fn delete_account_flow(&mut self, seed: &str) {
+        let accounts = self.store.list_accounts(seed);
+        if accounts.is_empty() {
+            self.modals.show_notification("No accounts to delete", None).ok();
+            return;
+        }
+        for a in accounts.iter() {
+            self.modals.add_list_item(&a.display()).ok();
+        }
+        let victim = match self.modals.get_radiobutton("Delete which account?") {
+            Ok(sel) => match accounts.iter().find(|a| a.display() == sel) {
+                Some(a) => a.clone(),
+                None => return,
+            },
+            Err(_) => return, // user aborted
+        };
+        // "Cancel" first so an accidental double-press doesn't delete
+        match self
+            .radio(&format!("Delete '{}' ({})?", victim.name, victim.path()), &["Cancel", "Delete account"])
+            .as_deref()
+        {
+            Some("Delete account") => match self.store.delete_account(seed, victim.index) {
+                Ok(()) => {
+                    self.modals.show_notification(&format!("Account '{}' deleted", victim.name), None).ok();
+                }
+                Err(e) => {
+                    self.modals.show_notification(&format!("Error deleting account:\n{:?}", e), None).ok();
+                }
+            },
+            _ => {}
+        }
+    }
+
+    /// The account (on `seed`) that owns the request's derivation path, which must
+    /// be m/44'/60'/account'/change/index with a known account index.
+    fn match_account(&self, seed: &str, path: &DerivationPath) -> Option<Account> {
+        let c = &path.components;
+        if c.len() != 5 {
+            return None;
+        }
+        let purpose_ok = c[0].index == 44 && c[0].hardened && c[1].index == 60 && c[1].hardened;
+        if !purpose_ok || !c[2].hardened || c[3].hardened || c[4].hardened {
+            return None;
+        }
+        self.store.list_accounts(seed).into_iter().find(|a| a.index == c[2].index)
+    }
+
+    /// Decode a fully received eth-sign-request and drive the signing process.
+    fn handle_sign_request(&mut self, cbor: &[u8]) {
+        let request = match signer_decoding::decode_sign_request(cbor) {
+            Ok(r) => r,
+            Err(e) => {
+                self.modals.show_notification(&format!("Invalid sign request:\n{:?}", e), None).ok();
+                return;
+            }
+        };
+        let Some(seed) = self.selected_seed.lock().unwrap().clone() else {
+            self.modals.show_notification("Select a seed first", None).ok();
+            return;
+        };
+        let Some(account) = self.match_account(&seed, &request.derivation_path) else {
+            self.modals
+                .show_notification(
+                    &format!("No account matches\nthe requested path\n{}", request.derivation_path),
+                    None,
+                )
+                .ok();
+            return;
+        };
+
+        // derive the signing key for the requested path
+        let mut entropy = match self.store.read_seed(&seed) {
+            Some(e) => e,
+            None => {
+                self.modals.show_notification("Could not read the seed", None).ok();
+                return;
+            }
+        };
+        self.modals.dynamic_notification(Some("Deriving keys..."), None).ok();
+        let key = signer_signing::key_from_entropy(&entropy, &request.derivation_path);
+        zeroize(&mut entropy);
+        self.modals.dynamic_notification_close().ok();
+        let key = match key {
+            Ok(k) => k,
+            Err(e) => {
+                self.modals.show_notification(&format!("Derivation error:\n{:?}", e), None).ok();
+                return;
+            }
+        };
+        let from = signer_signing::address_of(&key);
+        if let Some(expected) = request.address {
+            if from != expected {
+                self.modals
+                    .show_notification("Address mismatch:\nrequest does not match\nthe derived key", None)
+                    .ok();
+                return;
+            }
+        }
+
+        match &request.message {
+            MessageKind::Transaction(tx) => {
+                let display = tx.display();
+                self.transaction_menu(&request, &display, &account, from, &key);
+            }
+            MessageKind::Eip712(td) => {
+                let td = td.clone();
+                self.typed_data_menu(&request, &td, &account, &key);
+            }
+            MessageKind::Eip191(msg) => {
+                let msg = msg.clone();
+                self.eip191_menu(&request, &msg, &account, &key);
+            }
+        }
+    }
+
+    /// Review menu for an EIP-191 personal message; loops until Sign or Cancel.
+    fn eip191_menu(
+        &mut self,
+        request: &SignRequest,
+        msg: &PersonalMessage,
+        account: &Account,
+        key: &signer_signing::SigningKey,
+    ) {
+        loop {
+            match self
+                .radio(
+                    &format!("Message for '{}'", account.name),
+                    &["View message", "EIP-191 Digest", "Sign", "Cancel"],
+                )
+                .as_deref()
+            {
+                Some("View message") => self.view_personal_message(msg),
+                Some("EIP-191 Digest") => {
+                    self.show_hash("EIP-191 digest", signer_core::digest::eip191_digest(&msg.raw));
+                }
+                Some("Sign") => {
+                    self.sign_and_show(request, key);
+                    return;
+                }
+                _ => return, // Cancel or aborted
+            }
+        }
+    }
+
+    /// Scrollable view of the message text. Content that cannot be displayed
+    /// faithfully (invalid UTF-8, or control/replacement-prone characters) is
+    /// announced with a warning first, then shown sanitized — and as a hex dump
+    /// when it isn't text at all.
+    fn view_personal_message(&self, msg: &PersonalMessage) {
+        match &msg.as_utf8 {
+            Some(text) => {
+                let sanitized = sanitize_for_display(text);
+                if sanitized.replaced > 0 {
+                    self.modals
+                        .show_notification(
+                            &format!(
+                                "Warning:\n{} character(s)\ncannot be displayed\nand are shown as {}",
+                                sanitized.replaced, REPLACEMENT_CHAR
+                            ),
+                            None,
+                        )
+                        .ok();
+                }
+                self.modals.show_scrollable(Some("Message"), &wrap_rows(&sanitized.text, 16)).ok();
+            }
+            None => {
+                self.modals
+                    .show_notification(
+                        "Warning:\nmessage is not text\n(invalid UTF-8);\nshowing raw bytes",
+                        None,
+                    )
+                    .ok();
+                let hex: String = msg.raw.iter().map(|b| format!("{:02x}", b)).collect();
+                self.modals.show_scrollable(Some(&format!("{} bytes", msg.raw.len())), &group_hex(&hex)).ok();
+            }
+        }
+    }
+
+    /// Scrollable grouped-hex view of a 32-byte hash, followed by its QR code.
+    fn show_hash(&self, caption: &str, hash: B256) {
+        let hex = format!("{}", hash);
+        self.modals.show_scrollable(Some(caption), &group_hex(&hex[2..])).ok();
+        // empty caption gives the QR the full panel height
+        self.modals.show_notification("", Some(&hex)).ok();
+    }
+
+    /// Sign the request and present the eth-signature UR as a QR (re-showable).
+    fn sign_and_show(&self, request: &SignRequest, key: &signer_signing::SigningKey) {
+        match signer_signing::sign_request(request, key) {
+            Ok(signature) => {
+                let cbor = signer_decoding::encode_eth_signature(
+                    request.request_id,
+                    &signature,
+                    Some("dc34-eth-signer"),
+                );
+                let ur = ur_encode_single("eth-signature", &cbor);
+                log::info!("eth-signature UR ({} chars)", ur.len());
+                loop {
+                    self.modals.show_notification("", Some(&ur)).ok();
+                    match self.radio("Signature sent?", &["Show QR again", "Done"]).as_deref() {
+                        Some("Show QR again") => {}
+                        _ => break,
+                    }
+                }
+            }
+            Err(e) => {
+                self.modals.show_notification(&format!("Signing error:\n{:?}", e), None).ok();
+            }
+        }
+    }
+
+    /// Review menu for EIP-712 typed data; loops until Sign or Cancel.
+    fn typed_data_menu(
+        &mut self,
+        request: &SignRequest,
+        td: &TypedData712,
+        account: &Account,
+        key: &signer_signing::SigningKey,
+    ) {
+        loop {
+            match self
+                .radio(
+                    &format!("Typed data for '{}'", account.name),
+                    &["View message", "EIP-712 Digest", "Domain Hash", "Message Hash", "Sign", "Cancel"],
+                )
+                .as_deref()
+            {
+                Some("View message") => self.json_browser(&td.json),
+                Some("EIP-712 Digest") => self.show_hash("EIP-712 digest", td.eip712_digest),
+                Some("Domain Hash") => self.show_hash("Domain hash", td.domain_hash),
+                Some("Message Hash") => self.show_hash("Message hash", td.message_hash),
+                Some("Sign") => {
+                    self.sign_and_show(request, key);
+                    return;
+                }
+                _ => return, // Cancel or aborted
+            }
+        }
+    }
+
+    /// Interactive browser for a JSON document on a tiny screen: objects and
+    /// arrays are radio lists ("key: preview" entries) that drill down a level,
+    /// leaves are shown in full as scrollable wrapped text, and "[ Up ]" walks
+    /// back out. A raw (wrapped, scrollable) view of the whole document is also
+    /// offered at the top level.
+    fn json_browser(&mut self, json: &str) {
+        let root: serde_json::Value = match serde_json::from_str(json) {
+            Ok(v) => v,
+            Err(_) => {
+                // not valid JSON (shouldn't happen post-decode): show it raw
+                self.modals.show_scrollable(Some("Message"), &wrap_rows(json, 16)).ok();
+                return;
+            }
+        };
+        const UP: &str = "[ Up ]";
+        const RAW: &str = "[ Raw JSON ]";
+        const EXIT: &str = "[ Exit view ]";
+        let mut path: Vec<JsonStep> = Vec::new();
+        loop {
+            // resolve the current node
+            let mut node = &root;
+            for step in &path {
+                node = match step {
+                    JsonStep::Key(k) => &node[k.as_str()],
+                    JsonStep::Index(i) => &node[*i],
+                };
+            }
+            // build the entry list for this level
+            let mut labels: Vec<String> = match node {
+                serde_json::Value::Object(map) => {
+                    map.iter().map(|(k, v)| format!("{}: {}", k, json_preview(v))).collect()
+                }
+                serde_json::Value::Array(arr) => {
+                    arr.iter().enumerate().map(|(i, v)| format!("[{}] {}", i, json_preview(v))).collect()
+                }
+                _ => Vec::new(), // scalar root: fall through to leaf display
+            };
+            if labels.is_empty() {
+                self.modals.show_scrollable(Some("Value"), &wrap_rows(&node.to_string(), 16)).ok();
+                if path.pop().is_none() {
+                    return;
+                }
+                continue;
+            }
+            let entry_count = labels.len();
+            if path.is_empty() {
+                labels.push(String::from(RAW));
+            } else {
+                labels.push(String::from(UP));
+            }
+            labels.push(String::from(EXIT));
+            let title = match path.last() {
+                Some(JsonStep::Key(k)) => k.clone(),
+                Some(JsonStep::Index(i)) => format!("[{}]", i),
+                None => String::from("Message"),
+            };
+            let refs: Vec<&str> = labels.iter().map(|s| s.as_str()).collect();
+            let Some(choice) = self.radio(&title, &refs) else { return };
+            match choice.as_str() {
+                RAW => {
+                    self.modals.show_scrollable(Some("Raw JSON"), &wrap_rows(json, 16)).ok();
+                }
+                UP => {
+                    path.pop();
+                }
+                EXIT => return,
+                _ => {
+                    let Some(pos) = labels[..entry_count].iter().position(|l| *l == choice) else {
+                        continue;
+                    };
+                    match node {
+                        serde_json::Value::Object(map) => {
+                            let key = map.keys().nth(pos).unwrap().clone();
+                            let child = &map[&key];
+                            if child.is_object() || child.is_array() {
+                                path.push(JsonStep::Key(key));
+                            } else {
+                                self.modals
+                                    .show_scrollable(Some(&key), &wrap_rows(&child.to_string(), 16))
+                                    .ok();
+                            }
+                        }
+                        serde_json::Value::Array(arr) => {
+                            let child = &arr[pos];
+                            if child.is_object() || child.is_array() {
+                                path.push(JsonStep::Index(pos));
+                            } else {
+                                self.modals
+                                    .show_scrollable(
+                                        Some(&format!("[{}]", pos)),
+                                        &wrap_rows(&child.to_string(), 16),
+                                    )
+                                    .ok();
+                            }
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+            }
+        }
+    }
+
+    /// Review menu for a decoded transaction; loops until Sign or Cancel.
+    fn transaction_menu(
+        &mut self,
+        request: &SignRequest,
+        display: &TxDisplay,
+        account: &Account,
+        from: signer_core::alloy_primitives::Address,
+        key: &signer_signing::SigningKey,
+    ) {
+        loop {
+            let mut items = vec!["From", "To", "Amount", "Other infos"];
+            if display.calldata_digest.is_some() {
+                items.push("TX data");
+            }
+            items.push("Sign");
+            items.push("Cancel");
+            match self.radio(&format!("TX for '{}'", account.name), &items).as_deref() {
+                Some("From") => {
+                    let checksummed = from.to_checksum(None);
+                    self.modals.show_scrollable(Some("From"), &group_hex(&checksummed[2..])).ok();
+                }
+                Some("To") => match display.to {
+                    Some(to) => {
+                        let checksummed = to.to_checksum(None);
+                        self.modals.show_scrollable(Some("To"), &group_hex(&checksummed[2..])).ok();
+                    }
+                    None => {
+                        self.modals.show_notification("Contract creation\n(no destination)", None).ok();
+                    }
+                },
+                Some("Amount") => {
+                    self.modals
+                        .show_scrollable(
+                            Some("Amount"),
+                            &format!("{} ETH\nwei:\n{}", format_eth(display.value), display.value),
+                        )
+                        .ok();
+                }
+                Some("Other infos") => {
+                    let chain = match display.chain_id {
+                        Some(id) => format!("{}", id),
+                        None => String::from("unspecified"),
+                    };
+                    self.modals
+                        .show_scrollable(
+                            None,
+                            &format!(
+                                "Chain id:\n{}\nMax fees:\n{} ETH\nwei:\n{}",
+                                chain,
+                                format_eth(display.max_fee),
+                                display.max_fee
+                            ),
+                        )
+                        .ok();
+                }
+                Some("TX data") => {
+                    if let Some(digest) = display.calldata_digest {
+                        self.show_hash("Data hash (8213)", digest);
+                    }
+                }
+                Some("Sign") => {
+                    self.sign_and_show(request, key);
+                    return;
+                }
+                _ => return, // Cancel or aborted
+            }
+        }
+    }
+
+    /// Receive an ERC-4527 eth-sign-request from the camera, part by part.
+    /// Completion is detected automatically once every part has been seen; the
+    /// user is prompted to advance the sender after each new part.
+    pub fn scan_request_flow(&mut self) {
+        let mut decoder = UrDecoder::new();
+        loop {
+            let acquisition = match self.gfx.acquire_qr() {
+                Ok(a) => a,
+                Err(e) => {
+                    self.modals.show_notification(&format!("Camera error:\n{:?}", e), None).ok();
+                    return;
+                }
+            };
+            let Some(content) = acquisition.content else {
+                // a key press aborted the acquisition
+                if !decoder.in_progress() {
+                    return;
+                }
+                let (received, total) = decoder.progress();
+                match self
+                    .radio(
+                        &format!("Scan paused ({}/{} parts)", received, total),
+                        &["Keep scanning", "Abort"],
+                    )
+                    .as_deref()
+                {
+                    Some("Keep scanning") => continue,
+                    _ => return,
+                }
+            };
+            match decoder.receive(&content) {
+                UrEvent::Complete { ur_type, message } => {
+                    if ur_type != "eth-sign-request" {
+                        self.modals
+                            .show_notification(&format!("Unsupported UR type:\n{}", ur_type), None)
+                            .ok();
+                        return;
+                    }
+                    log::info!("eth-sign-request received: {} bytes", message.len());
+                    self.handle_sign_request(&message);
+                    return;
+                }
+                UrEvent::Part { received, total } => {
+                    self.modals
+                        .show_notification(
+                            &format!(
+                                "Part {}/{} received.\nShow the next part,\nthen press any key.",
+                                received, total
+                            ),
+                            None,
+                        )
+                        .ok();
+                }
+                UrEvent::Duplicate { part, received, total } => {
+                    // the notification blocks on a keypress, so the camera isn't nagged
+                    // by the same code sitting in front of it
+                    self.modals
+                        .show_notification(
+                            &format!(
+                                "Part {} already scanned\n({}/{} received).\nShow the next part,\nthen press any key.",
+                                part, received, total
+                            ),
+                            None,
+                        )
+                        .ok();
+                }
+                UrEvent::Ignored => {
+                    // unusable (mixed) part in front of the camera; breathe, rescan
+                    self.tt.sleep_ms(250).ok();
+                }
+                UrEvent::Error(e) => {
+                    // not a (matching) UR: tell the user and keep scanning; a key
+                    // press during acquisition still aborts
+                    self.modals.show_notification(&format!("QR error:\n{}", e), None).ok();
+                }
+            }
+        }
+    }
+
+    fn prompt_account_number(&self) -> Option<u32> {
+        match self.modals.alert_builder("Account number:").field(None, Some(account_number_validator)).build()
+        {
+            Ok(text) => text.first().as_str().trim().parse().ok(),
+            Err(_) => None, // user aborted
+        }
+    }
+
+    /// Naming is optional: abort or an empty entry falls back to "Account N".
+    fn prompt_account_name(&self, index: u32) -> String {
+        let default = format!("Account {}", index);
+        match self
+            .modals
+            .alert_builder("Name this account:")
+            .field(Some(default.clone()), Some(account_name_validator))
+            .build()
+        {
+            Ok(text) => {
+                let name = text.first().as_str().trim().to_string();
+                if name.is_empty() { default } else { name }
+            }
+            Err(_) => default,
+        }
+    }
+
+    /// BIP-44 account-level derivation path m/44'/60'/index'.
+    fn account_derivation_path(account: &Account) -> DerivationPath {
+        DerivationPath {
+            components: vec![
+                ChildNumber { index: 44, hardened: true },
+                ChildNumber { index: 60, hardened: true },
+                ChildNumber { index: account.index, hardened: true },
+            ],
+        }
+    }
+
+    /// Derive the account-level extended key. The BIP-39 seed stretch is slow, so a
+    /// "deriving" notice is shown while it runs; the entropy is wiped afterwards.
+    fn account_key(&self, seed: &str, account: &Account) -> Option<AccountKey> {
+        let mut entropy = match self.store.read_seed(seed) {
+            Some(e) => e,
+            None => {
+                self.modals.show_notification("Could not read the seed", None).ok();
+                return None;
+            }
+        };
+        self.modals.dynamic_notification(Some("Deriving keys..."), None).ok();
+        let key = AccountKey::from_entropy(&entropy, &Self::account_derivation_path(account));
+        zeroize(&mut entropy);
+        self.modals.dynamic_notification_close().ok();
+        match key {
+            Ok(k) => Some(k),
+            Err(e) => {
+                self.modals.show_notification(&format!("Derivation error:\n{:?}", e), None).ok();
+                None
+            }
+        }
+    }
+
+    /// Per-account operations, entered by picking an account in "Display accounts".
+    fn account_actions_flow(&mut self, seed: &str, account: &Account) {
+        loop {
+            match self
+                .radio(
+                    &format!("'{}' ({})", account.name, account.path()),
+                    &["Connect wallet", "Verify address", "List addresses", "Back"],
+                )
+                .as_deref()
+            {
+                Some("Connect wallet") => self.connect_wallet_flow(seed, account),
+                Some("Verify address") => self.verify_address_flow(seed, account),
+                Some("List addresses") => self.list_addresses_flow(seed, account),
+                _ => return,
+            }
+        }
+    }
+
+    /// Show the ERC-4527 crypto-hdkey (account xpub) as a QR for a watch-only wallet.
+    fn connect_wallet_flow(&mut self, seed: &str, account: &Account) {
+        let Some(key) = self.account_key(seed, account) else { return };
+        let hdkey = signer_decoding::encode_crypto_hdkey(
+            &key.public_key_bytes(),
+            &key.chain_code(),
+            &Self::account_derivation_path(account),
+            key.master_fingerprint(),
+            Some(&account.name),
+            Some("dc34-eth-signer"),
+        );
+        let ur = ur_encode_single("crypto-hdkey", &hdkey);
+        log::info!("crypto-hdkey UR ({} chars): {}", ur.len(), ur);
+        self.modals.show_notification(&format!("Scan with wallet:\n'{}'", account.name), None).ok();
+        // empty caption gives the QR the full panel height
+        self.modals.show_notification("", Some(&ur)).ok();
+    }
+
+    /// Scan an address QR and check it against the first ADDRESS_SCAN_COUNT
+    /// addresses of this account.
+    fn verify_address_flow(&mut self, seed: &str, account: &Account) {
+        self.modals.show_notification("Show the address QR\nto the camera", None).ok();
+        let target = loop {
+            let acquisition = match self.gfx.acquire_qr() {
+                Ok(a) => a,
+                Err(e) => {
+                    self.modals.show_notification(&format!("Camera error:\n{:?}", e), None).ok();
+                    return;
+                }
+            };
+            let Some(content) = acquisition.content else { return }; // key press = abort
+            match parse_eth_address(&content) {
+                Some(addr) => break addr,
+                None => {
+                    self.modals
+                        .show_notification("Not an Ethereum address.\nTry another QR code.", None)
+                        .ok();
+                }
+            }
+        };
+        let Some(key) = self.account_key(seed, account) else { return };
+        self.modals.dynamic_notification(Some("Verifying address..."), None).ok();
+        let mut found = None;
+        for index in 0..ADDRESS_SCAN_COUNT {
+            match key.address(0, index) {
+                Ok(addr) if addr.as_slice() == target => {
+                    found = Some(index);
+                    break;
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    log::error!("derivation error at index {}: {:?}", index, e);
+                    break;
+                }
+            }
+        }
+        self.modals.dynamic_notification_close().ok();
+        match found {
+            Some(index) => {
+                self.modals
+                    .show_notification(
+                        &format!("Address belongs to\n'{}'\n{}/0/{}", account.name, account.path(), index),
+                        None,
+                    )
+                    .ok();
+            }
+            None => {
+                self.modals
+                    .show_notification(
+                        &format!(
+                            "NOT an address of\n'{}'\n(first {} checked)",
+                            account.name, ADDRESS_SCAN_COUNT
+                        ),
+                        None,
+                    )
+                    .ok();
+            }
+        }
+    }
+
+    /// Walk the account's addresses from index 0: show index + readable address,
+    /// then its QR, then let the user continue or exit.
+    fn list_addresses_flow(&mut self, seed: &str, account: &Account) {
+        let Some(key) = self.account_key(seed, account) else { return };
+        let mut index: u32 = 0;
+        loop {
+            let address = match key.address(0, index) {
+                Ok(a) => a,
+                Err(e) => {
+                    self.modals.show_notification(&format!("Derivation error:\n{:?}", e), None).ok();
+                    return;
+                }
+            };
+            let checksummed = address.to_checksum(None);
+            // one 8-hex-char group per row, scrollable in case the caption plus
+            // address is taller than the panel
+            let mut grouped = String::from("0x");
+            for (i, c) in checksummed[2..].chars().enumerate() {
+                if i % 8 == 0 {
+                    grouped.push('\n');
+                }
+                grouped.push(c);
+            }
+            self.modals
+                .show_scrollable(
+                    Some(&format!("Address {}/0/{}", account.path(), index)),
+                    grouped.trim_start_matches('\n'),
+                )
+                .ok();
+            // empty caption gives the QR the full panel height
+            self.modals.show_notification("", Some(&checksummed)).ok();
+            match self
+                .radio(&format!("Address index {}", index), &["Next address", "Show again", "Exit"])
+                .as_deref()
+            {
+                Some("Next address") => index += 1,
+                Some("Show again") => {}
+                _ => return,
+            }
+        }
+    }
+}
+
+/// Replacement used for characters the display cannot render faithfully.
+const REPLACEMENT_CHAR: char = '?';
+
+struct Sanitized {
+    text: String,
+    replaced: usize,
+}
+
+/// Keep newlines (they become row breaks) and printable ASCII; anything else —
+/// other control characters and non-ASCII the small font may not cover — is
+/// replaced and counted so the user can be warned.
+fn sanitize_for_display(text: &str) -> Sanitized {
+    let mut out = String::with_capacity(text.len());
+    let mut replaced = 0;
+    for c in text.chars() {
+        if c == '\n' || (' '..='~').contains(&c) {
+            out.push(c);
+        } else {
+            out.push(REPLACEMENT_CHAR);
+            replaced += 1;
+        }
+    }
+    Sanitized { text: out, replaced }
+}
+
+/// One navigation step inside a JSON document.
+enum JsonStep {
+    Key(String),
+    Index(usize),
+}
+
+/// Short single-line preview of a JSON value for radio-list entries.
+fn json_preview(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::Object(m) => format!("{{{}}}", m.len()),
+        serde_json::Value::Array(a) => format!("[{}]", a.len()),
+        serde_json::Value::String(s) => {
+            let mut p: String = s.chars().take(10).collect();
+            if s.chars().count() > 10 {
+                p.push('\u{2026}');
+            }
+            p
+        }
+        other => other.to_string(),
+    }
+}
+
+/// Hard-wrap into rows of at most `width` chars for scrollable display.
+fn wrap_rows(s: &str, width: usize) -> String {
+    let mut out = String::with_capacity(s.len() + s.len() / width + 1);
+    for (i, c) in s.chars().enumerate() {
+        if i > 0 && i % width == 0 {
+            out.push('\n');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// "XXXXXXXX" rows (8 hex chars each) prefixed with a "0x" row, for scrollable display.
+fn group_hex(hex_no_prefix: &str) -> String {
+    let mut out = String::from("0x");
+    for (i, c) in hex_no_prefix.chars().enumerate() {
+        if i % 8 == 0 {
+            out.push('\n');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// Wei to a trimmed decimal ETH string.
+fn format_eth(wei: U256) -> String {
+    let base = U256::from(10u64).pow(U256::from(18u64));
+    let whole = wei / base;
+    let frac = u64::try_from(wei % base).unwrap_or(0); // < 10^18 always fits
+    if frac == 0 {
+        return format!("{}", whole);
+    }
+    let mut frac = format!("{:018}", frac);
+    while frac.ends_with('0') {
+        frac.pop();
+    }
+    format!("{}.{}", whole, frac)
+}
+
+/// Accept "0x<40 hex>" (any case), optionally wrapped as an EIP-681
+/// "ethereum:0x..." URI; returns the raw 20 bytes.
+fn parse_eth_address(text: &str) -> Option<[u8; 20]> {
+    let t = text.trim();
+    let t = t.strip_prefix("ethereum:").unwrap_or(t);
+    let hex_part = t.strip_prefix("0x").or_else(|| t.strip_prefix("0X"))?;
+    // EIP-681 may append @chain_id or query params
+    let hex_part = hex_part.split(|c: char| c == '@' || c == '?' || c == '/').next()?;
+    if hex_part.len() != 40 || !hex_part.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    let mut out = [0u8; 20];
+    for (i, chunk) in hex_part.as_bytes().chunks_exact(2).enumerate() {
+        let hi = (chunk[0] as char).to_digit(16)?;
+        let lo = (chunk[1] as char).to_digit(16)?;
+        out[i] = ((hi << 4) | lo) as u8;
+    }
+    Some(out)
+}
+
+fn account_number_validator(input: &TextEntryPayload) -> Option<String> {
+    match input.as_str().trim().parse::<u32>() {
+        Ok(n) if n <= MAX_ACCOUNT_INDEX => None,
+        Ok(_) => Some(String::from("Number too large")),
+        Err(_) => Some(String::from("Enter a number")),
+    }
+}
+
+fn account_name_validator(input: &TextEntryPayload) -> Option<String> {
+    if input.as_str().trim().len() > MAX_ACCOUNT_NAME_LEN {
+        Some(String::from("Name too long"))
+    } else {
+        None
+    }
+}
+
+fn seed_name_validator(input: &TextEntryPayload) -> Option<String> {
+    let name = input.as_str().trim();
+    if name.is_empty() {
+        Some(String::from("Name cannot be empty"))
+    } else if name.len() > MAX_SEED_NAME_LEN {
+        Some(String::from("Name too long"))
+    } else {
+        None
+    }
+}
+
+/// Best-effort wipe of secret material before the buffer is freed.
+fn zeroize(buf: &mut [u8]) {
+    for b in buf.iter_mut() {
+        *b = 0;
+    }
+}
