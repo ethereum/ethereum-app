@@ -14,7 +14,7 @@ It has no dependencies on the underlying Operating System
 
 An implementation of the signer for [Foundation](https://foundation.xyz/) Passport Prime for KeyOS
 
-In this version the signer is airgapped using [ERC-4527](https://github.com/ethereum/ercs/blob/master/ERCS/erc-4527.md) QR codes and implements "verifiable signing" using [ERC-8213](https://erc8213.eth.limo/) - it has no dependencies whatsoever on any external data source.  
+In this version the signer is airgapped using [ERC-4527](https://github.com/ethereum/ercs/blob/master/ERCS/erc-4527.md) QR codes and implements [Verifiable Signing](verifiable_signing/README.md) using [ERC-8213](https://erc8213.eth.limo/) - it has no dependencies whatsoever on any external data source.  
 
 Future versions will implement different bearers and optionally [Clear Signing](https://clearsigning.org/), with additional third party dependencies
 
