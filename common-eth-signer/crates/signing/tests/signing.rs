@@ -7,7 +7,10 @@ use k256::ecdsa::{RecoveryId, Signature, VerifyingKey};
 use signer_core::{
     ChildNumber, DecodedTx, DerivationPath, MessageKind, PersonalMessage, SignRequest, SignerError,
 };
-use signer_signing::{address_of, key_from_entropy, signing_hash, sign_request};
+use signer_signing::{
+    address_of, key_from_entropy, key_from_seed, seed_from_entropy, signing_hash, sign_request,
+    AccountKey,
+};
 
 /// m/44'/60'/0'/0/0
 fn eth_path() -> DerivationPath {
@@ -227,4 +230,49 @@ fn account_key_matches_direct_derivation() {
     );
     // different indexes give different addresses
     assert_ne!(account.address(0, 1).unwrap(), account.address(0, 0).unwrap());
+}
+
+/// The entropy forms have to stay exactly the empty-passphrase case of the seed
+/// forms, since they are now written as wrappers over them.
+#[test]
+fn the_entropy_forms_are_the_empty_passphrase_seed_forms() {
+    let entropy = [0u8; 16];
+    let path = eth_path();
+    let seed = seed_from_entropy(&entropy, "").unwrap();
+
+    assert_eq!(
+        address_of(&key_from_seed(&seed, &path).unwrap()),
+        address_of(&key_from_entropy(&entropy, &path).unwrap())
+    );
+
+    let account = DerivationPath { components: path.components[..3].to_vec() };
+    assert_eq!(
+        AccountKey::from_seed(&seed, &account).unwrap().public_key_bytes(),
+        AccountKey::from_entropy(&entropy, &account).unwrap().public_key_bytes()
+    );
+}
+
+/// A passphrase is a different wallet, which is the case the entropy forms
+/// cannot reach at all.
+#[test]
+fn a_passphrase_derives_a_different_wallet() {
+    let entropy = [0u8; 16];
+    let path = eth_path();
+    let plain = seed_from_entropy(&entropy, "").unwrap();
+    let passphrased = seed_from_entropy(&entropy, "sator arepo").unwrap();
+
+    assert_ne!(plain, passphrased);
+    assert_ne!(
+        address_of(&key_from_seed(&plain, &path).unwrap()),
+        address_of(&key_from_seed(&passphrased, &path).unwrap())
+    );
+}
+
+/// The four bytes have to be the integer form's big-endian encoding, so the two
+/// accessors cannot drift apart.
+#[test]
+fn the_fingerprint_accessors_agree() {
+    let account = DerivationPath { components: eth_path().components[..3].to_vec() };
+    let key = AccountKey::from_entropy(&[0u8; 16], &account).unwrap();
+    assert_eq!(key.master_fingerprint_bytes(), key.master_fingerprint().to_be_bytes());
 }

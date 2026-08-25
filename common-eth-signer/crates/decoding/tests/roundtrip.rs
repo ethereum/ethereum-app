@@ -5,7 +5,7 @@
 use alloy_consensus::{SignableTransaction, TxEip1559, TxEip7702, TxLegacy};
 use alloy_primitives::{address, Address, Bytes, TxKind, U256};
 use ciborium::value::{Integer, Value};
-use signer_decoding::{decode_sign_request, encode_eth_signature};
+use signer_decoding::{decode_sign_data, decode_sign_request, encode_eth_signature};
 use signer_core::{DecodedTx, MessageKind, SignerError};
 
 fn int(n: i128) -> Value {
@@ -331,4 +331,55 @@ fn eth_signature_roundtrip() {
     let (_, s) = m.iter().find(|(k, _)| *k == int(2)).unwrap();
     let Value::Bytes(b) = s else { panic!("sig not bytes") };
     assert_eq!(b.len(), 65);
+}
+
+/// `decode_sign_data` has to tell the two encodings apart with no `data-type`
+/// tag to help it, which is the case for any transport that is not ERC-4527.
+#[test]
+fn decode_sign_data_dispatches_on_the_eip2718_first_byte() {
+    let legacy = TxLegacy {
+        chain_id: Some(1),
+        nonce: 9,
+        gas_price: 20_000_000_000,
+        gas_limit: 21_000,
+        to: TxKind::Call(TO),
+        value: U256::from(1_000_000_000_000_000_000u128),
+        input: Bytes::new(),
+    };
+    let mut sign_data = Vec::new();
+    legacy.encode_for_signing(&mut sign_data);
+    assert!(sign_data[0] >= 0xc0, "a legacy tx starts an RLP list");
+    let DecodedTx::Legacy(decoded) = decode_sign_data(&sign_data).unwrap() else {
+        panic!("expected a legacy tx");
+    };
+    assert_eq!(decoded.nonce, 9);
+    assert_eq!(decoded.chain_id, Some(1));
+
+    let typed = TxEip1559 {
+        chain_id: 1,
+        nonce: 7,
+        max_priority_fee_per_gas: 1_000_000_000,
+        max_fee_per_gas: 20_000_000_000,
+        gas_limit: 60_000,
+        to: TxKind::Call(TO),
+        value: U256::ZERO,
+        input: Bytes::new(),
+        access_list: Default::default(),
+    };
+    let mut sign_data = Vec::new();
+    typed.encode_for_signing(&mut sign_data);
+    assert_eq!(sign_data[0], 0x02);
+    let DecodedTx::Eip1559(decoded) = decode_sign_data(&sign_data).unwrap() else {
+        panic!("expected an EIP-1559 tx");
+    };
+    assert_eq!(decoded.nonce, 7);
+
+    assert!(matches!(
+        decode_sign_data(&[]),
+        Err(SignerError::InvalidTransaction(_))
+    ));
+    assert!(matches!(
+        decode_sign_data(&[0x05, 0xc0]),
+        Err(SignerError::InvalidTransaction(_))
+    ));
 }

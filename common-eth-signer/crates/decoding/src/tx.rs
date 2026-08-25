@@ -104,3 +104,16 @@ pub fn decode_typed_tx(sign_data: &[u8]) -> Result<DecodedTx, SignerError> {
         ))),
     }
 }
+
+/// Decode unsigned transaction sign-data of any supported kind.
+///
+/// EIP-2718 reserves `0xc0` and above for the RLP list of a legacy transaction,
+/// so a lower first byte is a type byte. A caller that has the bytes but not
+/// ERC-4527's `data-type` tag would otherwise re-derive that rule.
+pub fn decode_sign_data(sign_data: &[u8]) -> Result<DecodedTx, SignerError> {
+    match sign_data.first() {
+        Some(&first) if first >= 0xc0 => Ok(DecodedTx::Legacy(decode_legacy(sign_data)?)),
+        Some(_) => decode_typed_tx(sign_data),
+        None => Err(SignerError::InvalidTransaction("empty sign-data".into())),
+    }
+}
