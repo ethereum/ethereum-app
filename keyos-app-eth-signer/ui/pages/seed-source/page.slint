@@ -1,0 +1,190 @@
+// SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: MIT
+
+import { TR2, TrId } from "../../gen/tr.slint";
+import { Palette, Size } from "../../compat/theme.slint";
+import { Importance } from "../../compat/types.slint";
+import { BasePage, NavHeader, AppHeader, ButtonSection, Button, HeadingSm, TextSm, RadioButton, ConfirmationModal } from "../../compat/widgets.slint";
+
+import { SeedSourceProps } from "props.slint";
+import { Settings, SeedSourceKind } from "../../settings.slint";
+import { Navigate } from "../../gen/navigate.slint";
+
+// One choice: a radio, a name, and the sentence that tells the user what they
+// are picking. The description is the point of this page -- the options are
+// different wallets, and a bare list of names cannot say that.
+component SeedSourceOption inherits Rectangle {
+    in property <string> title;
+    in property <string> body;
+    in property <bool> selected;
+
+    callback clicked();
+
+    height: layout.preferred-height;
+    border-radius: Size.sz4;
+    border-width: 2px;
+    border-color: selected ? Palette.border-brand : Palette.border-tertiary;
+    background: selected ? Palette.background-selected : Palette.background-primary;
+
+    layout := HorizontalLayout {
+        padding: Size.sz4;
+        spacing: Size.sz4;
+        alignment: start;
+
+        VerticalLayout {
+            alignment: start;
+            RadioButton {
+                checked: root.selected;
+                clicked => {
+                    root.clicked();
+                }
+            }
+        }
+
+        VerticalLayout {
+            alignment: start;
+            spacing: Size.sz1;
+
+            HeadingSm {
+                text: root.title;
+                horizontal-alignment: left;
+            }
+
+            TextSm {
+                text: root.body;
+                color: Palette.content-secondary;
+                wrap: word-wrap;
+                horizontal-alignment: left;
+            }
+        }
+    }
+
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component SeedSourcePage inherits BasePage {
+    in property <SeedSourceProps> props;
+
+    // The first-launch pass is exactly "nothing chosen yet": there is no wallet
+    // to go back to, nothing to delete, and no confirmation to ask for.
+    property <bool> first-run: Settings.seed-source == SeedSourceKind.Unset;
+
+    // The page owns the selection until it is committed, so the radios respond
+    // immediately while the wallet behind Settings.seed-source is untouched.
+    property <SeedSourceKind> picked: Settings.seed-source;
+    property <bool> changed: picked != Settings.seed-source;
+    property <bool> confirm-modal-open: false;
+    // Leaving an imported phrase means leaving the only copy this device holds.
+    property <bool> leaving-mnemonic: Settings.seed-source == SeedSourceKind.UserMnemonic;
+
+    VerticalLayout {
+        // Nothing to go back to on first launch: a wallet has to be chosen
+        // before any other screen has anything to show.
+        if first-run: AppHeader {
+            title: TR2.lookup(TrId.SeedSourceTitle);
+        }
+
+        if !first-run: NavHeader {
+            title: TR2.lookup(TrId.SeedSourceTitle);
+            clicked => {
+                Navigate.backward();
+            }
+        }
+
+        // Not the shared ScrollBody: its Flickable is given no viewport-height,
+        // so it centres short content instead of pinning it to the top, and it
+        // asks for its whole content as preferred height, which pushes the
+        // button off screen. Both are pinned here, the same way
+        // widgets/import-widgets.slint does it.
+        Rectangle {
+            clip: true;
+            // The list takes the slack; the header and the button take only what
+            // they need. ButtonSection is a VerticalLayout with alignment:end,
+            // which otherwise stretches and squeezes the list to nothing.
+            preferred-height: 0px;
+            vertical-stretch: 1;
+
+            Flickable {
+                x: 0;
+                y: 0;
+                width: parent.width;
+                height: parent.height;
+                viewport-height: content.preferred-height;
+
+                content := VerticalLayout {
+                    width: parent.width;
+                    alignment: start;
+                    spacing: Size.sz4;
+                    padding: Size.sz4;
+
+                    TextSm {
+                        text: TR2.lookup(TrId.SeedSourceIntro);
+                        color: Palette.content-secondary;
+                        wrap: word-wrap;
+                    }
+
+                    SeedSourceOption {
+                        title: TR2.lookup(TrId.SeedSourceAppTitle);
+                        body: TR2.lookup(TrId.SeedSourceAppBody);
+                        selected: picked == SeedSourceKind.AppSeed;
+                        clicked => {
+                            picked = SeedSourceKind.AppSeed;
+                        }
+                    }
+
+                    SeedSourceOption {
+                        title: TR2.lookup(TrId.SeedSourceMnemonicTitle);
+                        body: TR2.lookup(TrId.SeedSourceMnemonicBody);
+                        selected: picked == SeedSourceKind.UserMnemonic;
+                        clicked => {
+                            picked = SeedSourceKind.UserMnemonic;
+                        }
+                    }
+                }
+            }
+        }
+
+        ButtonSection {
+            vertical-stretch: 0;
+            Button {
+                label: TR2.lookup(TrId.CommonButtonContinue);
+                importance: Importance.primary;
+                // On first launch any choice is a commit; afterwards only a
+                // different one is.
+                enabled: picked != SeedSourceKind.Unset && (first-run || changed);
+
+                clicked => {
+                    if (first-run) {
+                        // No accounts exist yet, so there is nothing to warn about.
+                        Settings.choose-seed-source(picked);
+                    } else {
+                        confirm-modal-open = true;
+                    }
+                }
+            }
+        }
+    }
+
+    if confirm-modal-open: ConfirmationModal {
+        icon: "alert";
+        icon-color: Palette.content-notice;
+        title: TR2.lookup(TrId.SeedSourceModalHeader);
+        // Leaving an imported phrase adds the verify-your-backup warning.
+        text: leaving-mnemonic ? TR2.lookup(TrId.SeedSourceModalBackupWarning) : TR2.lookup(TrId.SeedSourceModalContent);
+        confirm-button-label: TR2.lookup(TrId.CommonButtonConfirm);
+        cancel-button-label: TR2.lookup(TrId.CommonButtonCancel);
+
+        cancel-clicked => {
+            confirm-modal-open = false;
+        }
+
+        confirm-clicked => {
+            confirm-modal-open = false;
+            Settings.choose-seed-source(picked);
+        }
+    }
+}
