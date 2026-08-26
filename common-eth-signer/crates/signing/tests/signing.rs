@@ -9,7 +9,7 @@ use signer_core::{
 };
 use signer_signing::{
     address_of, key_from_entropy, key_from_seed, seed_from_entropy, signing_hash, sign_request,
-    AccountKey,
+    AccountKey, AccountXpub,
 };
 
 /// m/44'/60'/0'/0/0
@@ -275,4 +275,44 @@ fn the_fingerprint_accessors_agree() {
     let account = DerivationPath { components: eth_path().components[..3].to_vec() };
     let key = AccountKey::from_entropy(&[0u8; 16], &account).unwrap();
     assert_eq!(key.master_fingerprint_bytes(), key.master_fingerprint().to_be_bytes());
+}
+
+/// The public-only node has to derive exactly what the private one does, for
+/// every child a wallet will ever show. This is the whole warrant for an app
+/// deriving addresses locally from a custodian's `GetAccountKey` answer: if
+/// these ever diverge, the app shows addresses nobody can spend from.
+#[test]
+fn the_public_account_node_agrees_with_the_private_one() {
+    let entropy = [0u8; 16];
+    let account = DerivationPath { components: eth_path().components[..3].to_vec() };
+    let private = AccountKey::from_entropy(&entropy, &account).unwrap();
+    let public =
+        AccountXpub::from_parts(&private.public_key_bytes(), private.chain_code()).unwrap();
+
+    for index in [0u32, 1, 2, 41, 999] {
+        assert_eq!(public.address(0, index).unwrap(), private.address(0, index).unwrap());
+    }
+    // The change branch is derived the same way and must not be special-cased.
+    assert_eq!(public.address(1, 0).unwrap(), private.address(1, 0).unwrap());
+}
+
+/// And it has to land on the published vector, not merely agree with a sibling
+/// that could be wrong in the same way.
+#[test]
+fn the_public_account_node_derives_the_reference_address() {
+    let account = DerivationPath { components: eth_path().components[..3].to_vec() };
+    let private = AccountKey::from_entropy(&[0u8; 16], &account).unwrap();
+    let public =
+        AccountXpub::from_parts(&private.public_key_bytes(), private.chain_code()).unwrap();
+
+    assert_eq!(
+        public.address(0, 0).unwrap().to_checksum(None),
+        "0x9858EfFD232B4033E47d90003D41EC34EcaEda94"
+    );
+}
+
+/// A public key that is not a point on the curve is a refusal, not a panic.
+#[test]
+fn a_malformed_public_key_is_refused() {
+    assert!(AccountXpub::from_parts(&[0u8; 33], [0u8; 32]).is_err());
 }
