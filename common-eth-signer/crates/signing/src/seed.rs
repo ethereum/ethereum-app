@@ -7,7 +7,7 @@
 use alloy_primitives::{keccak256, Address};
 use bip39::Mnemonic;
 use bip32::XPrv;
-use k256::ecdsa::SigningKey;
+use k256::ecdsa::{SigningKey, VerifyingKey};
 use signer_core::{DerivationPath, SignerError};
 
 fn derivation_err(e: impl ToString) -> SignerError {
@@ -45,12 +45,17 @@ pub fn key_from_entropy(entropy: &[u8], path: &DerivationPath) -> Result<Signing
     key_from_seed(&seed_from_entropy(entropy, "")?, path)
 }
 
-/// The Ethereum address for a signing key: last 20 bytes of
+/// The Ethereum address for a public key: last 20 bytes of
 /// `keccak256(uncompressed_public_key[1..])`.
-pub fn address_of(key: &SigningKey) -> Address {
-    let encoded = key.verifying_key().to_encoded_point(false);
+pub fn address_of_public(key: &VerifyingKey) -> Address {
+    let encoded = key.to_encoded_point(false);
     let hash = keccak256(&encoded.as_bytes()[1..]);
     Address::from_slice(&hash[12..])
+}
+
+/// The Ethereum address for a signing key.
+pub fn address_of(key: &SigningKey) -> Address {
+    address_of_public(key.verifying_key())
 }
 
 /// An account-level extended key (e.g. at m/44'/60'/account'), kept resident so
@@ -108,5 +113,49 @@ impl AccountKey {
             .derive_child(bip32::ChildNumber::new(index, false).map_err(derivation_err)?)
             .map_err(derivation_err)?;
         Ok(address_of(xprv.private_key()))
+    }
+}
+
+/// The same account node as [`AccountKey`], reconstructed from its **public**
+/// parts alone: the compressed public key and chain code that a key custodian
+/// hands out (KeyOS's `os/ethereum-signer` returns exactly this pair from
+/// `GetAccountKey`).
+///
+/// It derives the non-hardened `change/index` children under the account, which
+/// is every address a BIP-44 wallet shows, without any private key in reach.
+/// [`AccountKey`] is the private-key twin; the two agree by construction and a
+/// test pins that.
+pub struct AccountXpub {
+    xpub: bip32::XPub,
+}
+
+impl AccountXpub {
+    /// Rebuild the node from a compressed SEC1 public key and its chain code.
+    ///
+    /// Only the chain code and the key take part in non-hardened derivation, so
+    /// the remaining BIP-32 attributes (depth, parent fingerprint, child number)
+    /// are placeholders: they would only matter to a serialiser, and this type
+    /// never serialises itself.
+    pub fn from_parts(public_key: &[u8; 33], chain_code: [u8; 32]) -> Result<Self, SignerError> {
+        let key = VerifyingKey::from_sec1_bytes(public_key).map_err(derivation_err)?;
+        let attrs = bip32::ExtendedKeyAttrs {
+            depth: 0,
+            parent_fingerprint: [0u8; 4],
+            child_number: bip32::ChildNumber::new(0, false).map_err(derivation_err)?,
+            chain_code,
+        };
+        Ok(AccountXpub { xpub: bip32::XPub::new(key, attrs) })
+    }
+
+    /// Address at `<account>/change/index`.
+    pub fn address(&self, change: u32, index: u32) -> Result<Address, SignerError> {
+        let mut xpub = self
+            .xpub
+            .derive_child(bip32::ChildNumber::new(change, false).map_err(derivation_err)?)
+            .map_err(derivation_err)?;
+        xpub = xpub
+            .derive_child(bip32::ChildNumber::new(index, false).map_err(derivation_err)?)
+            .map_err(derivation_err)?;
+        Ok(address_of_public(xpub.public_key()))
     }
 }
