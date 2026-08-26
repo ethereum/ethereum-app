@@ -139,9 +139,18 @@ impl AppState {
     /// dropping any passphrase wallet. Runs the PBKDF2 on a worker; refreshes
     /// the account list when done.
     pub fn rebuild_default_keys(state: StoredValue<AppState>) {
-        let entropy = {
+        // No source chosen yet: ask, and touch nothing until the answer is in.
+        // Two different wallets sit behind that choice, so there is no sensible
+        // one to derive in the meantime.
+        let Some(source) = state.borrow().settings.seed_source() else {
             let s = state.borrow();
-            match seed_source::resolve_entropy(&s.settings.seed_source(), &seed_source::app_seed()) {
+            s.refresh_slint_accounts();
+            s.ui().global::<crate::Navigate>().invoke_seed_source(Default::default());
+            return;
+        };
+
+        let entropy = {
+            match seed_source::resolve_entropy(&source, &seed_source::app_seed()) {
                 Ok(entropy) => entropy,
                 Err(e) => {
                     log::error!("failed to resolve the seed source: {e:?}");
@@ -236,7 +245,11 @@ impl AppState {
     ) -> anyhow::Result<Arc<KeyCache>> {
         let entropy = {
             let s = state.borrow();
-            seed_source::resolve_entropy(&s.settings.seed_source(), &seed_source::app_seed())?
+            let source = s
+                .settings
+                .seed_source()
+                .ok_or_else(|| anyhow::anyhow!("no seed source chosen"))?;
+            seed_source::resolve_entropy(&source, &seed_source::app_seed())?
         };
         let cache = spawn_worker({
             let passphrase = passphrase.clone();

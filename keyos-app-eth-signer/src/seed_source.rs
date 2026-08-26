@@ -4,9 +4,11 @@
 //! Where the wallet's keys come from (my-coin's key-source pattern).
 //!
 //! Two sources, one destination: both resolve to BIP-39 entropy that
-//! [`crate::eth_keys::KeyCache`] expands with an optional passphrase.
+//! [`crate::eth_keys::KeyCache`] expands with an optional passphrase. They are
+//! different wallets with different addresses, so the user picks one on first
+//! launch rather than being defaulted into either.
 //!
-//! - `Device`: the per-app seed, treated as BIP-39 entropy (24 words).
+//! - `AppSeed`: the per-app seed, treated as BIP-39 entropy (24 words).
 //! - `UserMnemonic`: a phrase the user typed, held as entropy sealed under a
 //!   key derived from the app seed (see [`seal`]/[`unseal`]) so the blob is
 //!   useless without both the device and the master seed it was imported
@@ -30,28 +32,28 @@ const KDF_CONTEXT: &[u8] = b"eth-signer/seed-store/v1";
 const AAD: &[u8] = b"eth-signer/imported-entropy/v1";
 const NONCE_LEN: usize = 24;
 
-/// TODO(sim): GetAppSeed hangs the simulator — using a fixed dev seed until
-/// that's debugged separately. To restore, replace the body with:
-///
-///     let seed = crate::Security::default().app_seed().expect("app seed unavailable");
-///     *seed.as_bytes()
-///
-/// GOTCHA when restoring: the first GetAppSeed call must happen on the main
-/// thread, before any background worker needs it — the grantOnFirstUse consent
-/// prompt is presented against this app's gui connection and is dropped
-/// (=> denied, app aborts) when the call comes from a detached worker at launch.
+/// GOTCHA: the first GetAppSeed call must happen on the main thread, before any
+/// background worker needs it — the grantOnFirstUse consent prompt is presented
+/// against this app's gui connection and is dropped (=> denied, app aborts)
+/// when the call comes from a detached worker at launch.
 pub fn app_seed() -> [u8; 32] {
-    //[0x42; 32]
-    let seed = crate::Security::default().app_seed().expect("app seed unavailable");  
-    *seed.as_bytes() 
+    let seed = crate::Security::default().app_seed().expect("app seed unavailable");
+    *seed.as_bytes()
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+/// There is deliberately no `Default`: an unchosen source is `None` in
+/// [`crate::store::AppSettings`], which is what sends the user to the chooser.
+/// Guessing would silently pick one of two different wallets.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind")]
 pub enum SeedSource {
     /// Re-derived from the app seed on every launch. No key bytes are stored.
-    #[default]
-    Device,
+    ///
+    /// Reads `Device` too: that is what this same wallet was called before the
+    /// source became a choice, so an existing install keeps its addresses and
+    /// is never asked to pick.
+    #[serde(alias = "Device")]
+    AppSeed,
     /// A phrase the user typed, held as BIP-39 entropy sealed under a key
     /// derived from the app seed.
     UserMnemonic { sealed_hex: String },
@@ -60,7 +62,7 @@ pub enum SeedSource {
 /// The BIP-39 entropy behind whichever source is configured.
 pub fn resolve_entropy(source: &SeedSource, app_seed: &[u8; 32]) -> anyhow::Result<Zeroizing<Vec<u8>>> {
     match source {
-        SeedSource::Device => Ok(Zeroizing::new(app_seed.to_vec())),
+        SeedSource::AppSeed => Ok(Zeroizing::new(app_seed.to_vec())),
         SeedSource::UserMnemonic { sealed_hex } => {
             let blob = hex::decode(sealed_hex)
                 .map_err(|_| anyhow::anyhow!("the stored recovery phrase is unreadable"))?;
@@ -157,9 +159,9 @@ mod tests {
     }
 
     #[test]
-    fn device_source_is_the_app_seed() {
+    fn app_seed_source_is_the_app_seed() {
         let app_seed = [7u8; 32];
-        assert_eq!(*resolve_entropy(&SeedSource::Device, &app_seed).unwrap(), app_seed.to_vec());
+        assert_eq!(*resolve_entropy(&SeedSource::AppSeed, &app_seed).unwrap(), app_seed.to_vec());
     }
 
     #[test]

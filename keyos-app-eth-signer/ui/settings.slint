@@ -2,18 +2,26 @@
 // SPDX-License-Identifier: MIT
 
 export enum SeedSourceKind {
-    Device,
+    // No choice made yet. Only ever the state before the first-launch chooser
+    // has been answered; every screen that shows a wallet is unreachable until
+    // it has been.
+    Unset,
+    // The per-app seed, used as BIP-39 entropy.
+    AppSeed,
+    // A recovery phrase the user typed in.
     UserMnemonic,
 }
 
 export global Settings {
     // Where the wallet's keys come from. Set by Rust at startup and after a
-    // switch; the settings page never mutates it directly.
-    in property <SeedSourceKind> seed-source: SeedSourceKind.Device;
+    // change; no page mutates it directly.
+    in property <SeedSourceKind> seed-source: SeedSourceKind.Unset;
 
-    // Switch the source back to the device app seed: deletes all accounts,
-    // forgets the imported phrase and rebuilds the keys.
-    callback switch-to-device();
+    // Commit a choice from the seed-source page. Rust deletes the accounts of
+    // the outgoing wallet, persists the new source and rebuilds the keys —
+    // except for UserMnemonic, which nothing commits until a valid phrase is
+    // entered, so it routes on to the import flow instead.
+    callback choose-seed-source(kind: SeedSourceKind);
 
     // The passphrase feature is only available with an imported phrase.
     out property <bool> passphrase-available: seed-source == SeedSourceKind.UserMnemonic;

@@ -180,16 +180,39 @@ fn default_true() -> bool {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettings {
-    #[serde(default)]
-    pub seed_source: SeedSource,
+    /// `None` until the user has chosen. Two different wallets sit behind this
+    /// field, so an absent or unreadable value sends them to the chooser rather
+    /// than picking one.
+    #[serde(default, deserialize_with = "lenient_seed_source")]
+    pub seed_source: Option<SeedSource>,
     #[serde(default = "default_true")]
     pub show_passphrase_warning: bool,
 }
 
 impl Default for AppSettings {
     fn default() -> Self {
-        Self { seed_source: SeedSource::default(), show_passphrase_warning: true }
+        Self { seed_source: None, show_passphrase_warning: true }
     }
+}
+
+/// Read `seed_source` without letting a value this build does not recognise
+/// take the rest of the settings down with it.
+///
+/// A source written by a build that offers more of them than this one reads as
+/// unchosen, and the user is asked, rather than the whole settings file falling
+/// back to defaults and taking their other preferences with it.
+fn lenient_seed_source<'de, D>(deserializer: D) -> Result<Option<SeedSource>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let raw = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(raw.and_then(|value| match serde_json::from_value(value) {
+        Ok(source) => Some(source),
+        Err(e) => {
+            log::warn!("unrecognised seed source in settings, asking again: {e}");
+            None
+        }
+    }))
 }
 
 pub struct SettingsStore {
@@ -203,12 +226,13 @@ impl SettingsStore {
         Self { data }
     }
 
-    pub fn seed_source(&self) -> SeedSource {
+    /// `None` when the user has not chosen a source yet.
+    pub fn seed_source(&self) -> Option<SeedSource> {
         self.data.seed_source.clone()
     }
 
     pub fn set_seed_source(&mut self, source: SeedSource) {
-        self.data.guard().seed_source = source;
+        self.data.guard().seed_source = Some(source);
     }
 
     pub fn show_passphrase_warning(&self) -> bool {
@@ -217,5 +241,65 @@ impl SettingsStore {
 
     pub fn set_show_passphrase_warning(&mut self, show: bool) {
         self.data.guard().show_passphrase_warning = show;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn settings(json: &str) -> AppSettings {
+        serde_json::from_str(json).expect("settings always parse")
+    }
+
+    /// Both sources round-trip by name, because the name on disk is the only
+    /// thing standing between a user and a different wallet.
+    #[test]
+    fn each_source_round_trips() {
+        for source in [SeedSource::AppSeed, SeedSource::UserMnemonic { sealed_hex: "abcd".into() }] {
+            let stored =
+                AppSettings { seed_source: Some(source.clone()), show_passphrase_warning: true };
+            let json = serde_json::to_string(&stored).unwrap();
+            assert_eq!(settings(&json).seed_source, Some(source));
+        }
+    }
+
+    /// A fresh install has made no choice, which is what routes to the chooser.
+    #[test]
+    fn absent_means_unchosen() {
+        assert_eq!(settings("{}").seed_source, None);
+        assert!(settings("{}").show_passphrase_warning);
+    }
+
+    /// Before the source became a choice it was written as `Device`, and it
+    /// meant this same app seed. Existing installs must keep their wallet and
+    /// never be asked to pick.
+    #[test]
+    fn the_legacy_name_is_the_app_seed() {
+        let legacy = settings(r#"{"seed_source":{"kind":"Device"},"show_passphrase_warning":false}"#);
+        assert_eq!(legacy.seed_source, Some(SeedSource::AppSeed));
+        assert!(!legacy.show_passphrase_warning);
+    }
+
+    /// A source this build does not know reads as unchosen, and must not take
+    /// the rest of the settings down with it.
+    #[test]
+    fn an_unknown_source_asks_again() {
+        let future = settings(r#"{"seed_source":{"kind":"SomethingElse"},"show_passphrase_warning":false}"#);
+        assert_eq!(future.seed_source, None);
+        assert!(!future.show_passphrase_warning);
+    }
+
+    /// A stored phrase has to survive the upgrade: the sealed blob is the only
+    /// copy on the device, so losing it loses the wallet.
+    #[test]
+    fn a_stored_phrase_survives_the_upgrade() {
+        let stored = settings(
+            r#"{"seed_source":{"kind":"UserMnemonic","sealed_hex":"0badc0de"},"show_passphrase_warning":true}"#,
+        );
+        assert_eq!(
+            stored.seed_source,
+            Some(SeedSource::UserMnemonic { sealed_hex: "0badc0de".into() })
+        );
     }
 }

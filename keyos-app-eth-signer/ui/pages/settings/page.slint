@@ -2,57 +2,23 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { TR2, TrId } from "../../gen/tr.slint";
-import { Palette, Size } from "../../compat/theme.slint";
-import { BasePage, PageBody, NavHeader, TextSm, MenuSection, MenuSectionLayout, HLine, RadioButton, ConfirmationModal } from "../../compat/widgets.slint";
+import { Size } from "../../compat/theme.slint";
+import { BasePage, PageBody, NavHeader, MenuSection, MenuSectionLayout, MenuActionItem } from "../../compat/widgets.slint";
 
 import { SettingsProps } from "props.slint";
 import { Settings, SeedSourceKind } from "../../settings.slint";
 import { Navigate } from "../../gen/navigate.slint";
 
-component SeedSourceRow inherits Rectangle {
-    in property <string> text;
-    in property <bool> checked;
-
-    callback clicked();
-
-    height: Size.sz14;
-
-    HorizontalLayout {
-        padding-left: Size.sz4;
-        padding-right: Size.sz4;
-        alignment: start;
-        spacing: Size.sz4;
-
-        VerticalLayout {
-            alignment: center;
-            RadioButton {
-                checked: root.checked;
-                clicked => {
-                    root.clicked();
-                }
-            }
-        }
-
-        TextSm {
-            text: root.text;
-            vertical-alignment: center;
-        }
-    }
-
-    TouchArea {
-        clicked => {
-            root.clicked();
-        }
-    }
-}
-
 export component SettingsPage inherits BasePage {
     in property <SettingsProps> props;
 
-    // Which source the pending confirmation modal would switch to.
-    property <bool> confirm-modal-open: false;
-    property <SeedSourceKind> confirm-target;
-    property <bool> leaving-mnemonic: Settings.seed-source == SeedSourceKind.UserMnemonic;
+    // The choice, and the explanation of what it means, both live on the
+    // seed-source page; this row is only the way in and the current answer.
+    property <string> current: Settings.seed-source == SeedSourceKind.AppSeed
+        ? TR2.lookup(TrId.SeedSourceAppTitle)
+        : Settings.seed-source == SeedSourceKind.UserMnemonic
+            ? TR2.lookup(TrId.SeedSourceMnemonicTitle)
+            : TR2.lookup(TrId.SettingsSeedSourceNotSet);
 
     VerticalLayout {
         NavHeader {
@@ -70,57 +36,16 @@ export component SettingsPage inherits BasePage {
                 MenuSection {
                     title: TR2.lookup(TrId.SettingsSeedSourceTitle);
                     MenuSectionLayout {
-                        SeedSourceRow {
-                            text: TR2.lookup(TrId.SettingsSeedSourceDevice);
-                            checked: Settings.seed-source == SeedSourceKind.Device;
+                        MenuActionItem {
+                            label: root.current;
+                            first: true;
+                            last: true;
                             clicked => {
-                                if (Settings.seed-source != SeedSourceKind.Device) {
-                                    confirm-target = SeedSourceKind.Device;
-                                    confirm-modal-open = true;
-                                }
-                            }
-                        }
-
-                        HLine { }
-
-                        SeedSourceRow {
-                            text: TR2.lookup(TrId.SettingsSeedSourceMnemonic);
-                            checked: Settings.seed-source == SeedSourceKind.UserMnemonic;
-                            clicked => {
-                                if (Settings.seed-source != SeedSourceKind.UserMnemonic) {
-                                    confirm-target = SeedSourceKind.UserMnemonic;
-                                    confirm-modal-open = true;
-                                }
+                                Navigate.seed-source({ });
                             }
                         }
                     }
                 }
-            }
-        }
-    }
-
-    if confirm-modal-open: ConfirmationModal {
-        icon: "alert";
-        icon-color: Palette.content-notice;
-        title: TR2.lookup(TrId.SeedSourceModalHeader);
-        // Leaving an imported phrase adds the verify-your-backup warning.
-        text: leaving-mnemonic ? TR2.lookup(TrId.SeedSourceModalBackupWarning) : TR2.lookup(TrId.SeedSourceModalContent);
-        confirm-button-label: TR2.lookup(TrId.CommonButtonConfirm);
-        cancel-button-label: TR2.lookup(TrId.CommonButtonCancel);
-
-        cancel-clicked => {
-            confirm-modal-open = false;
-        }
-
-        confirm-clicked => {
-            confirm-modal-open = false;
-            if (confirm-target == SeedSourceKind.Device) {
-                // Deletes all accounts and rebuilds keys immediately.
-                Settings.switch-to-device();
-            } else {
-                // Nothing is deleted until a valid phrase is committed; backing
-                // out of the import keeps everything as-is.
-                Navigate.import-seed({ });
             }
         }
     }
