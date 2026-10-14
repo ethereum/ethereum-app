@@ -1,60 +1,54 @@
-// SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
-// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 Ethereum Foundation
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
-import { NavHeader, BasePage, ContentSection, PageBody, TextMd, ButtonSection, Button, QrCodeCard } from "../../../compat/widgets.slint";
-import { Palette, Importance, Size } from "../../../compat/theme.slint";
+// Connect a watch-only wallet: the account's ERC-4527 crypto-hdkey as a QR,
+// then the address check that proves the wallet derived the same addresses.
+
+import { Theme, ButtonVariant } from "@ui/theme.slint";
+import { Button } from "@ui/button.slint";
 import { TR2, TrId } from "../../../gen/tr.slint";
-
 import { Navigate } from "../../../gen/navigate.slint";
 import { AccountProps } from "../props.slint";
 import { AccountConnectProps } from "./props.slint";
 import { ConnectAccount } from "../../../connect-account.slint";
 import { VerifyAddress } from "../../../verify-address.slint";
+import { Page, PageHeader } from "../../../components/layout.slint";
+import { MutedText, QrPanel } from "../../../components/eth-widgets.slint";
 
-// Connect a watch-only wallet: shows the ERC-4527 crypto-hdkey UR for this
-// account, then offers the same post-connection address verification the
-// Bitcoin app had.
-export component AccountConnectPage inherits BasePage {
+export component AccountConnectPage inherits Page {
     in property <AccountProps> acct-props;
     in property <AccountConnectProps> props;
 
-    VerticalLayout {
-        NavHeader {
-            title: TR2.lookup(TrId.ConnectScanTitle);
-            clicked => {
-                Navigate.backward();
-            }
+    PageHeader {
+        title: TR2.lookup(TrId.AccountsConnectWallet);
+        action-clicked => {
+            Navigate.backward();
         }
+    }
 
-        PageBody {
-            ContentSection {
-                TextMd {
-                    horizontal-alignment: center;
-                    color: Palette.content-tertiary;
-                    text: TR2.lookup(TrId.ConnectScanSubheader);
-                }
+    MutedText {
+        text: TR2.lookup(TrId.ConnectScanSubheader);
+        horizontal-alignment: center;
+    }
 
-                HorizontalLayout {
-                    alignment: center;
+    Rectangle { vertical-stretch: 1; }
 
-                    QrCodeCard {
-                        data: ConnectAccount.export-account-qr(acct-props.account-id);
-                    }
-                }
-            }
+    QrPanel {
+        data: ConnectAccount.export-account-qr(root.acct-props.account-id);
+        size: 400px;
+    }
 
-            ButtonSection {
-                Button {
-                    label: TR2.lookup(TrId.CommonButtonVerifyAddress);
-                    clicked => {
-                        VerifyAddress.verify-address({
-                            account-id: acct-props.account-id,
-                            show-skip-button: true,
-                            show-view-all: false,
-                        });
-                    }
-                }
-            }
+    Rectangle { vertical-stretch: 1; }
+
+    Button {
+        text: TR2.lookup(TrId.CommonButtonVerifyAddress);
+        full-width: true;
+        clicked => {
+            VerifyAddress.verify-address({
+                account-id: root.acct-props.account-id,
+                show-skip-button: true,
+                show-view-all: false,
+            });
         }
     }
 }

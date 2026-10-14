@@ -1,0 +1,193 @@
+// SPDX-FileCopyrightText: 2026 Ethereum Foundation
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
+// Page frame shared by every screen: the background with ethereum.org's top
+// tint, the status-bar inset, a header, and a scroll area that keeps a fixed
+// content width (wrapped text measured against a layout-derived width makes
+// Slint's viewport depend on itself).
+
+import { Theme, UISize, Images } from "@ui/theme.slint";
+import { IconButton, IconButtonVariant } from "@ui/icon_button.slint";
+
+export global PageMetrics {
+    out property <length> gutter: Theme.spacing-lg;
+    // Every scroll area is this wide; see the note at the top of the file.
+    out property <length> content-width: UISize.screen-width - 2 * self.gutter;
+}
+
+// The top of the page tint. src/theme.rs paints the control-center bar this
+// colour, and the wash starts with it right below the bar, so the two read as
+// one surface.
+export global Wash {
+    out property <float> top-alpha: Theme.is-dark ? 0.30 : 0.14;
+    out property <color> bar: Theme.palette-primary.mix(Theme.palette-background, self.top-alpha);
+}
+
+// ethereum.org's bg-tint: the primary hue fading down from the top edge.
+// Linear on purpose: it is the gradient the device renderer is surest of.
+export component TopWash inherits Rectangle {
+    background: @linear-gradient(180deg,
+        Theme.palette-primary.with-alpha(Wash.top-alpha) 0%,
+        Theme.palette-primary.with-alpha(Wash.top-alpha * 0.28) 55%,
+        Theme.palette-primary.with-alpha(0) 100%);
+}
+
+// Background, wash, insets. Children stack vertically.
+export component Page inherits Rectangle {
+    in property <bool> wash: true;
+    in property <length> spacing: Theme.spacing-lg;
+    background: Theme.palette-background;
+
+    // Moving focus here hides the keyboard: on KeyOS it stays up for as long
+    // as a text field holds focus, and Done alone does not release it.
+    public function dismiss-keyboard() {
+        keyboard-sink.focus();
+    }
+
+    keyboard-sink := FocusScope {
+        width: 0;
+        height: 0;
+    }
+
+    // A tap on empty space puts the keyboard away too.
+    TouchArea {
+        clicked => {
+            keyboard-sink.focus();
+        }
+    }
+
+    if root.wash: TopWash {
+        x: 0;
+        y: UISize.control-center-status-bar-height;
+        width: parent.width;
+        height: 240px;
+    }
+
+    VerticalLayout {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        padding-left: PageMetrics.gutter;
+        padding-right: PageMetrics.gutter;
+        padding-top: UISize.control-center-status-bar-height + Theme.spacing-sm;
+        padding-bottom: Theme.spacing-lg;
+        spacing: root.spacing;
+
+        @children
+    }
+}
+
+export enum HeaderAction {
+    none,
+    back,
+    close,
+}
+
+// Title row: an optional back or close control, the title and an optional
+// subtitle, and an optional trailing icon button.
+export component PageHeader inherits HorizontalLayout {
+    in property <string> title;
+    in property <string> subtitle;
+    in property <HeaderAction> action: HeaderAction.back;
+    in property <image> trailing-icon;
+    in property <bool> trailing-enabled: true;
+    callback action-clicked();
+    callback trailing-clicked();
+
+    spacing: Theme.spacing-xs;
+    vertical-stretch: 0;
+
+    if root.action == HeaderAction.back: IconButton {
+        variant: IconButtonVariant.ghost;
+        max-width: self.preferred-width;
+        icon: Images.icon("chevron-left", Theme.icon-size-md);
+        clicked => {
+            root.action-clicked();
+        }
+    }
+
+    VerticalLayout {
+        alignment: center;
+        spacing: 2px;
+        horizontal-stretch: 1;
+
+        Text {
+            text: root.title;
+            color: Theme.palette-foreground;
+            font-family: Theme.font-primary;
+            font-size: 26px;
+            font-weight: Theme.font-weight-medium;
+            overflow: elide;
+        }
+
+        if root.subtitle != "": Text {
+            text: root.subtitle;
+            color: Theme.palette-muted;
+            font-family: Theme.font-primary;
+            font-size: Theme.font-size-subtitle;
+            overflow: elide;
+        }
+    }
+
+    if root.trailing-icon.width > 0: IconButton {
+        variant: IconButtonVariant.ghost;
+        max-width: self.preferred-width;
+        icon: root.trailing-icon;
+        disabled: !root.trailing-enabled;
+        clicked => {
+            root.trailing-clicked();
+        }
+    }
+
+    if root.action == HeaderAction.close: IconButton {
+        variant: IconButtonVariant.ghost;
+        max-width: self.preferred-width;
+        icon: Images.icon("x", Theme.icon-size-md);
+        clicked => {
+            root.action-clicked();
+        }
+    }
+}
+
+// A vertical scroll area for a layout. Placed in a layout it takes the slack;
+// the children are laid out at PageMetrics.content-width.
+export component ScrollArea inherits Rectangle {
+    in property <length> spacing: Theme.spacing-lg;
+    out property <length> content-height: content.preferred-height;
+    out property <length> view-height: self.height;
+    // How far down the content has been scrolled, as a positive length.
+    out property <length> offset: -flick.viewport-y;
+    out property <bool> at-end: flick.viewport-y <= -(self.content-height - self.height) + 1px;
+    out property <bool> fits: self.content-height <= self.height;
+
+    // One screenful down, keeping the last lines of the previous one in view.
+    public function page-down() {
+        flick.viewport-y = max(-(root.content-height - root.height), flick.viewport-y - (root.height - 64px));
+    }
+
+    public function to-top() {
+        flick.viewport-y = 0;
+    }
+
+    clip: true;
+    vertical-stretch: 1;
+    preferred-height: 0px;
+
+    flick := Flickable {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        viewport-width: PageMetrics.content-width;
+        viewport-height: max(root.height, content.preferred-height);
+
+        content := VerticalLayout {
+            width: PageMetrics.content-width;
+            alignment: start;
+            spacing: root.spacing;
+
+            @children
+        }
+    }
+}

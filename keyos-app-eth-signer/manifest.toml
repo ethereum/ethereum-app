@@ -43,6 +43,7 @@ en = "eth-signer"
     "HideKeyboard",
     "RegisterAppMessage",
     "RequestRedraw",
+    "SetControlCenterColor",
     "ShowModal",
     "SubmitFrame",
     "UpdateKeyboard",

@@ -1,5 +1,5 @@
-// SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
-// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 Ethereum Foundation
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 //! Recovery-phrase import flow (my-coin's word-entry logic). The draft lives
 //! in Rust — Slint arrays are not reactively tracked on element mutation.

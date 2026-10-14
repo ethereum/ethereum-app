@@ -1,5 +1,5 @@
-// SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
-// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 Ethereum Foundation
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 //! Where the wallet's keys come from (my-coin's key-source pattern).
 //!

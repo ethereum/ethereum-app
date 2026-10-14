@@ -1,5 +1,5 @@
-// SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
-// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 Ethereum Foundation
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 //! Transaction signing: an ERC-4527 `eth-sign-request` UR arrives from the
 //! QR scanner, gets decoded (`signer_decoding`), confirmed on the sign page
@@ -12,7 +12,7 @@
 
 use {
     crate::{
-        state::AppState, tr, EthMessageView, EthTxView, EthTypedDataView, Navigate, SignRequestKind,
+        eth_ui, state::AppState, tr, EthMessageView, EthTxView, EthTypedDataView, Navigate, SignRequestKind,
         SignTx, SignTxState, TrId,
     },
     signer_core::{MessageKind, SignRequest},
@@ -229,17 +229,36 @@ fn build_tx_view(
         tr::lookup_id(TrId::SignTxContractCreation).to_string()
     };
 
+    // The chain id from the RLP transaction body — the value the signature
+    // commits to. Never the request-level (attacker-chosen) CBOR chain-id;
+    // decoding rejects requests where the two disagree, and a pre-EIP-155
+    // transaction carries the ALL CHAINS warning instead of a number.
+    let chain = tx.chain_id.parse::<u64>().ok();
+    let network = chain.and_then(eth_ui::network_name).unwrap_or_default();
+
+    // The decoder hands over "1.5 ETH"; the page shows the number large and
+    // the exact wei (gwei for fees) beneath it. Anything unexpected is shown
+    // as it came, with no second unit.
+    let (amount, amount_wei) = match eth_ui::ether_number(&tx.value) {
+        Some(n) => (n.to_string(), eth_ui::group_digits(&eth_ui::ether_to_wei(n))),
+        None => (tx.value.clone(), String::new()),
+    };
+    let (max_fees, max_fees_gwei) = match eth_ui::ether_number(&tx.max_fee) {
+        Some(n) => (n.to_string(), eth_ui::group_digits(&eth_ui::wei_to_gwei(&eth_ui::ether_to_wei(n)))),
+        None => (tx.max_fee.clone(), String::new()),
+    };
+
     EthTxView {
         from: signer_address.into(),
         to: to.into(),
         to_is_address,
-        // The chain id from the RLP transaction body — the value the signature
-        // commits to. Never the request-level (attacker-chosen) CBOR chain-id;
-        // decoding rejects requests where the two disagree, and a pre-EIP-155
-        // transaction shows the ALL CHAINS warning instead of a number.
+        replay_protected: chain.is_some(),
         chain_id: tx.chain_id.into(),
-        amount: tx.value.into(),
-        max_fees: tx.max_fee.into(),
+        network: network.into(),
+        amount: amount.into(),
+        amount_wei: amount_wei.into(),
+        max_fees: max_fees.into(),
+        max_fees_gwei: max_fees_gwei.into(),
         tx_type: tx.tx_type.into(),
         origin: origin.into(),
         has_data: tx.calldata_digest.is_some(),

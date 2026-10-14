@@ -1,452 +1,360 @@
-// SPDX-FileCopyrightText: 2025 Foundation Devices, Inc. <hello@foundation.xyz>
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-FileCopyrightText: 2025 Ethereum Foundation
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
-import { AccountCard, BasePage, Button, Checkbox, Icon, IconButton, Modal, NavHeader, OverlayMenu, PopupMenuItem, Shadow, Shield, TextSm, SegmentedControl } from "../compat/widgets.slint";
-import { Importance, CurrentTheme, UISize, Palette, Size, CardColor } from "../compat/theme.slint";
+// Home: the wallet this app signs for and its accounts. Scanning a request is
+// the app's main job, so it is the one primary button; everything else about
+// an account lives on its own page, one tap away.
+
+import { Theme, Images, ButtonVariant, ControlSize } from "@ui/theme.slint";
+import { Button } from "@ui/button.slint";
+import { IconButton, IconButtonVariant } from "@ui/icon_button.slint";
+import { Chip, ChipVariant, ChipColor, ChipSize } from "@ui/chip.slint";
+import { Menu, MenuRow } from "@ui/menu.slint";
+import { MenuItem } from "@ui/menu_item.slint";
+import { Sheet } from "@ui/sheet.slint";
+import { Dialog } from "@ui/dialog.slint";
+import { Checkbox } from "@ui/checkbox.slint";
+import { SegmentedControl } from "@ui/segmented_control.slint";
 import { TR2, TrId } from "../gen/tr.slint";
-
-import { AccountView, Callbacks } from "../callbacks.slint";
 import { Navigate } from "../gen/navigate.slint";
-import { VerifyAddress } from "../verify-address.slint";
+import { AccountView, Callbacks } from "../callbacks.slint";
 import { EnterPassphrase } from "../enter-passphrase.slint";
-import { Settings } from "../settings.slint";
+import { Settings, SeedSourceKind } from "../settings.slint";
+import { Page, PageHeader, HeaderAction, ScrollArea } from "../components/layout.slint";
+import { Mono, Eyebrow, MutedText, Jazzicon, ShortAddressText, EthGlyph } from "../components/eth-widgets.slint";
 
-component ActionItem inherits VerticalLayout {
-    in property <string> icon;
-    in property <string> text;
+component AccountRow inherits MenuRow {
+    in property <AccountView> account;
 
-    callback clicked();
+    interactive: true;
+    content-padding-horizontal: Theme.spacing-lg;
+    content-padding-vertical: 14px;
 
-    alignment: center;
-    width: 130px;
+    HorizontalLayout {
+        spacing: 14px;
 
-    Rectangle {
+        Jazzicon {
+            address: root.account.address;
+            size: 44px;
+        }
+
         VerticalLayout {
-            alignment: start;
-            spacing: Size.sz3;
+            alignment: center;
+            spacing: 2px;
+            horizontal-stretch: 1;
 
-            HorizontalLayout {
-                alignment: center;
-                Rectangle {
-                    border-width: 1px;
-                    border-radius: Size.sz10;
-                    border-color: Palette.border-tertiary;
-
-                    width: Size.sz14;
-                    height: Size.sz14;
-
-                    HorizontalLayout {
-                        alignment: center;
-
-                        VerticalLayout {
-                            alignment: center;
-
-                            Icon {
-                                name: icon;
-                                color: Palette.content-primary;
-                                size: Size.sz8;
-                            }
-                        }
-                    }
-                }
+            Text {
+                text: root.account.name;
+                color: Theme.palette-foreground;
+                font-family: Theme.font-primary;
+                font-size: Theme.font-size-body;
+                font-weight: Theme.font-weight-medium;
+                overflow: elide;
             }
 
-            HorizontalLayout {
-                alignment: center;
-                TextSm {
-                    text: text;
-                    horizontal-alignment: center;
-                    width: 90px;
-                }
+            ShortAddressText {
+                address: root.account.address;
             }
         }
 
-        TouchArea {
-            clicked => {
-                root.clicked();
-            }
+        Text {
+            text: "#" + root.account.single.account-number;
+            vertical-alignment: center;
+            color: Theme.palette-muted;
+            font-family: Mono.family;
+            font-size: 14px;
+        }
+
+        Image {
+            width: 22px;
+            source: Images.icon("chevron-right", 22px);
+            colorize: Theme.palette-muted;
         }
     }
 }
 
-component AccountCollapsible inherits Rectangle {
-    in property <bool> open;
-    in property <string> name;
-    in property <string> icon;
-    in property <CardColor> card-color;
-    in property <string> crypto-icon;
-    in property <string> crypto-balance;
-    in property <string> fiat-balance;
-
-    callback clicked();
-
-    Shadow { }
-
-    Rectangle {
-        background: Palette.background-primary;
-        border-radius: Size.sz6;
-        border-color: Palette.border-tertiary;
-        border-width: Size.sz0_25;
-    }
-
-    VerticalLayout {
-        AccountCard {
-            name: root.name;
-            icon: root.icon;
-            crypto-icon: root.crypto-icon;
-            crypto-balance: root.crypto-balance;
-            fiat-balance: root.fiat-balance;
-            card-color: root.card-color;
-            clicked => {
-                root.clicked();
-            }
-        }
-
-        Rectangle {
-            height: open ? 140px : 0px;
-            visible: open;
-            clip: true;
-
-            animate height {
-                duration: 200ms;
-                easing: ease-in-out;
-            }
-
-            @children
-        }
+// The Default / Passphrase switch, shown while a passphrase is applied.
+component WalletSwitch inherits SegmentedControl {
+    options: [TR2.lookup(TrId.PassphraseDefault), TR2.lookup(TrId.PassphrasePassphrase)];
+    selected-index: EnterPassphrase.slider-index;
+    vertical-stretch: 0;
+    changed(index, _label) => {
+        EnterPassphrase.slider-index = index;
+        EnterPassphrase.switch-view(index);
     }
 }
 
-component AccountActions inherits HorizontalLayout {
-    in property <string> account-id;
+component AccountList inherits Menu {
+    full-width: true;
 
-    alignment: space-between;
-
-    ActionItem {
-        icon: "chain";
-        text: TR2.lookup(TrId.AccountsConnectWallet);
+    for acct[index] in Callbacks.accounts: AccountRow {
+        account: acct;
+        divider: index < Callbacks.accounts.length - 1;
         clicked => {
-            Navigate.account-connect({ account-id: account-id }, { });
-        }
-    }
-
-    ActionItem {
-        icon: "list";
-        text: TR2.lookup(TrId.AccountsVerifyAddress);
-        clicked => {
-            VerifyAddress.verify-address({ account-id: account-id, show-view-all: true });
-        }
-    }
-
-    ActionItem {
-        icon: "info";
-        text: TR2.lookup(TrId.AccountsAccountDetails);
-        clicked => {
-            Navigate.account({ account-id: account-id }, { });
+            Navigate.account({ account-id: acct.id }, { });
         }
     }
 }
 
-component AccountViewCard inherits AccountCollapsible {
-    in property <AccountView> acct;
-    out property <string> account-id: acct.id;
-
-    name: acct.name;
-
-    AccountActions {
-        account-id: account-id;
-    }
-}
-
-component AccountsPage inherits BasePage {
+component AccountsPage inherits Rectangle {
     property <bool> menu-open: false;
     property <bool> passphrase-modal-open: false;
-    property <string> selected: "";
     property <bool> has-passphrase: EnterPassphrase.passphrase != "";
+    property <bool> passphrase-view: root.has-passphrase && EnterPassphrase.slider-index == 1;
 
-    VerticalLayout {
-        padding-left: 5px;
-        padding-right: 5px;
+    Page {
+        spacing: Theme.spacing-md;
 
-        NavHeader {
-            title: TR2.lookup(TrId.AccountsTitle);
-            left-icon: (has-passphrase && EnterPassphrase.slider-index == 1) ? "shield-passphrase" : "";
-            right-icon: "ellipsis";
+        // Which app, and which wallet it signs for.
+        HorizontalLayout {
+            spacing: Theme.spacing-md;
+            vertical-stretch: 0;
 
-            clicked => {
-                Navigate.enter-passphrase({ });
+            EthGlyph { }
+
+            Text {
+                text: TR2.lookup(TrId.HomeTitle);
+                horizontal-stretch: 1;
+                vertical-alignment: center;
+                color: Theme.palette-foreground;
+                font-family: Theme.font-primary;
+                font-size: 30px;
+                font-weight: Theme.font-weight-medium;
             }
 
-            right-clicked => {
-                menu-open = true;
-            }
-        }
-
-        Shield {
-            VerticalLayout {
-                padding-left: Size.sz6;
-                padding-right: Size.sz6;
-                // TODO: this is exactly Size.sz6 in the design, whats up?
-                spacing: Size.sz6 - 2px;
-                alignment: stretch;
-
-                if has-passphrase: SegmentedControl {
-                    labels: [TR2.lookup(TrId.PassphraseDefault), TR2.lookup(TrId.PassphrasePassphrase)];
-                    icons: ["", "shield-passphrase"];
-                    selected-index: EnterPassphrase.slider-index;
-                    touch-factor: 1.5;
-
-                    changed(label, index) => {
-                        EnterPassphrase.slider-index = index;
-                        EnterPassphrase.switch-view(index);
-                    }
+            IconButton {
+                variant: IconButtonVariant.ghost;
+                max-width: self.preferred-width;
+                icon: Images.icon("ellipsis", Theme.icon-size-md);
+                clicked => {
+                    root.menu-open = true;
                 }
-
-                for acct[index] in Callbacks.accounts: VerticalLayout {
-                    AccountViewCard {
-                        acct: acct;
-                        icon: "device";
-                        card-color: acct.color;
-                        open: selected == acct.id;
-                        clicked => {
-                            if (selected == acct.id) {
-                                selected = "";
-                            } else {
-                                selected = acct.id;
-                            }
-                        }
-                    }
-                }
-
-                Rectangle { }
             }
         }
 
         HorizontalLayout {
-            alignment: end;
+            alignment: start;
+            spacing: Theme.spacing-sm;
+            vertical-stretch: 0;
 
-            padding-left: Size.sz5;
-            padding-right: Size.sz5;
+            Chip {
+                text: root.passphrase-view ? TR2.lookup(TrId.PassphrasePassphrase)
+                    : Settings.seed-source == SeedSourceKind.UserMnemonic ? TR2.lookup(TrId.SeedSourceMnemonicTitle)
+                    : TR2.lookup(TrId.SeedSourceAppTitle);
+                variant: ChipVariant.soft;
+                color: ChipColor.primary;
+                size: ChipSize.sm;
+            }
 
-            padding-bottom: Size.sz4;
+            if Callbacks.fingerprint != "": Chip {
+                text: Callbacks.fingerprint;
+                variant: ChipVariant.outlined;
+                size: ChipSize.sm;
+                font-family: Mono.family;
+            }
+        }
 
-            IconButton {
-                icon: "scan-qr";
-                importance: Importance.normal;
-                icon-size: Size.sz12;
-                size: Size.sz12;
-                enabled: Callbacks.can-scan;
+        if root.has-passphrase: WalletSwitch { }
+
+        Rectangle {
+            height: Theme.spacing-sm;
+        }
+
+        Eyebrow {
+            text: TR2.lookup(TrId.HomeAccounts);
+            vertical-stretch: 0;
+        }
+
+        if Callbacks.accounts.length > 0: ScrollArea {
+            spacing: Theme.spacing-md;
+
+            AccountList { }
+
+            Button {
+                text: TR2.lookup(TrId.HomeNewAccount);
+                variant: ButtonVariant.ghost;
+                start-icon: Images.icon("plus", Theme.icon-size-md);
+                full-width: true;
                 clicked => {
-                    if (Callbacks.can-scan) {
-                        Callbacks.scan-clicked();
-                    }
+                    Navigate.create-account({ });
+                }
+            }
+        }
+
+        if Callbacks.accounts.length == 0: VerticalLayout {
+            spacing: Theme.spacing-lg;
+            vertical-stretch: 1;
+            alignment: start;
+
+            MutedText {
+                text: TR2.lookup(TrId.HomeEmpty);
+            }
+
+            Button {
+                text: TR2.lookup(TrId.HomeNewAccount);
+                variant: ButtonVariant.secondary;
+                start-icon: Images.icon("plus", Theme.icon-size-md);
+                full-width: true;
+                // Nothing to create an account under until the keys exist.
+                disabled: Callbacks.fingerprint == "";
+                clicked => {
+                    Navigate.create-account({ });
+                }
+            }
+        }
+
+        Button {
+            text: TR2.lookup(TrId.HomeScanToSign);
+            size: ControlSize.lg;
+            start-icon: Images.image("scan-qr");
+            full-width: true;
+            disabled: !Callbacks.can-scan;
+            clicked => {
+                if (Callbacks.can-scan) {
+                    Callbacks.scan-clicked();
                 }
             }
         }
     }
 
-    if menu-open: OverlayMenu {
-        PopupMenuItem {
-            label: TR2.lookup(TrId.AccountsMenuCreateAccount);
-            icon: "plus";
-            first: true;
-            clicked => {
-                Navigate.create-account({ });
-                menu-open = false;
-            }
+    if root.menu-open: Sheet {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        detents: [0.52];
+        selected-detent: 0;
+        dismissed => {
+            root.menu-open = false;
         }
 
-        PopupMenuItem {
-            label: has-passphrase ? TR2.lookup(TrId.AccountsMenuClearPassphrase) : TR2.lookup(TrId.AccountsMenuApplyPassphrase);
-            icon: has-passphrase ? "shield-x" : "shield-plus";
-            // Passphrases only apply to an imported recovery phrase, not the
-            // device app seed.
-            enabled: Settings.passphrase-available;
-            clicked => {
-                if (Settings.passphrase-available) {
-                    menu-open = false;
+        Menu {
+            full-width: true;
 
-                    if (!Settings.show-passphrase-warning || has-passphrase) {
-                        Navigate.enter-passphrase({ });
-                    } else {
-                        passphrase-modal-open = true;
+            MenuItem {
+                label: TR2.lookup(TrId.AccountsMenuCreateAccount);
+                start-icon: Images.icon("plus", Theme.icon-size-md);
+                clicked => {
+                    root.menu-open = false;
+                    Navigate.create-account({ });
+                }
+            }
+
+            MenuItem {
+                label: root.has-passphrase ? TR2.lookup(TrId.AccountsMenuClearPassphrase) : TR2.lookup(TrId.AccountsMenuApplyPassphrase);
+                start-icon: Images.icon(root.has-passphrase ? "unlock" : "lock", Theme.icon-size-md);
+                // Passphrases only apply to an imported recovery phrase, not
+                // the device app seed.
+                disabled: !Settings.passphrase-available;
+                clicked => {
+                    if (Settings.passphrase-available) {
+                        root.menu-open = false;
+                        if (!Settings.show-passphrase-warning || root.has-passphrase) {
+                            Navigate.enter-passphrase({ });
+                        } else {
+                            root.passphrase-modal-open = true;
+                        }
                     }
                 }
             }
-        }
 
-        PopupMenuItem {
-            label: TR2.lookup(TrId.AccountsMenuViewArchive);
-            icon: "archive";
-            clicked => {
-                menu-open = false;
-                Callbacks.set-archive-mode(true);
+            MenuItem {
+                label: TR2.lookup(TrId.AccountsMenuViewArchive);
+                start-icon: Images.image("archive");
+                clicked => {
+                    root.menu-open = false;
+                    Callbacks.set-archive-mode(true);
+                }
             }
-        }
 
-        PopupMenuItem {
-            label: TR2.lookup(TrId.AccountsMenuSettings);
-            icon: "menu";
-            last: true;
-            clicked => {
-                menu-open = false;
-                Navigate.settings({ });
+            MenuItem {
+                label: TR2.lookup(TrId.AccountsMenuSettings);
+                start-icon: Images.icon("settings", Theme.icon-size-md);
+                divider: false;
+                clicked => {
+                    root.menu-open = false;
+                    Navigate.settings({ });
+                }
             }
-        }
-
-        touched-off => {
-            menu-open = false;
         }
     }
 
-    if passphrase-modal-open: Modal {
-        icon: "info";
-        icon-color: Palette.content-brand;
-        title: TR2.lookup(TrId.PassphraseModalHeader);
-        text: TR2.lookup(TrId.PassphraseModalContent);
-        button-spacing: Size.sz2;
+    if root.passphrase-modal-open: Dialog {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        dismissed => {
+            root.passphrase-modal-open = false;
+        }
 
-        // Slightly shorter than the typical row height to keep this checkbox row visually distinct from the Confirm button below.
-        Rectangle {
-            height: Size.sz15 - 2px;
+        Text {
+            text: TR2.lookup(TrId.PassphraseModalHeader);
+            color: Theme.palette-foreground;
+            font-family: Theme.font-primary;
+            font-size: Theme.font-size-title;
+            font-weight: Theme.font-weight-medium;
+            wrap: word-wrap;
+        }
 
-            VerticalLayout {
-                alignment: center;
+        MutedText {
+            text: TR2.lookup(TrId.PassphraseModalContent);
+        }
 
-                HorizontalLayout {
-                    alignment: center;
-                    spacing: Size.sz4;
-
-                    Checkbox {
-                        checked: !Settings.show-passphrase-warning;
-                    }
-
-                    TextSm {
-                        text: TR2.lookup(TrId.CommonButtonDontShowAgain);
-                        color: Palette.content-secondary;
-                    }
-                }
-            }
-
-            TouchArea {
-                clicked => {
-                    Settings.set-show-passphrase-warning(!Settings.show-passphrase-warning);
-                }
+        Checkbox {
+            label: TR2.lookup(TrId.CommonButtonDontShowAgain);
+            checked: !Settings.show-passphrase-warning;
+            changed(checked) => {
+                Settings.set-show-passphrase-warning(!checked);
             }
         }
 
-        // Outer Rectangle + sibling TouchArea give the Confirm button a 10 px hit-area extension above and below.
-        Rectangle {
-            height: Size.sz15 + 20px;
-
-            VerticalLayout {
-                alignment: center;
-
-                Button {
-                    label: TR2.lookup(TrId.CommonButtonConfirm);
-                    importance: Importance.primary;
-                    force-pressed: confirm-touch.pressed;
-                }
-            }
-
-            confirm-touch := TouchArea {
-                clicked => {
-                    passphrase-modal-open = false;
-                    Navigate.enter-passphrase({ });
-                }
+        Button {
+            text: TR2.lookup(TrId.CommonButtonConfirm);
+            full-width: true;
+            clicked => {
+                root.passphrase-modal-open = false;
+                Navigate.enter-passphrase({ });
             }
         }
     }
 }
 
-component AccountStatic inherits Rectangle {
-    in property <AccountView> acct;
-    in property <string> icon;
-    in property <CardColor> card-color;
-    in property <string> crypto-icon;
-    in property <string> crypto-balance;
-    in property <string> fiat-balance;
-
-    out property <string> account-id: acct.id;
-    property <string> name: acct.name;
-
-    callback clicked();
-
-    Shadow { }
-
-    Rectangle {
-        background: Palette.background-primary;
-        border-radius: Size.sz6;
-        border-color: Palette.border-tertiary;
-        border-width: Size.sz0_25;
-    }
-
-    VerticalLayout {
-        AccountCard {
-            width: 448px;
-            height: 112px;
-            name: root.name;
-            icon: root.icon;
-            crypto-icon: root.crypto-icon;
-            crypto-balance: root.crypto-balance;
-            fiat-balance: root.fiat-balance;
-            card-color: root.card-color;
-            clicked => {
-                root.clicked();
-            }
-        }
-    }
-}
-
-component ArchivePage inherits BasePage {
+component ArchivePage inherits Page {
     property <bool> has-passphrase: EnterPassphrase.passphrase != "";
 
-    VerticalLayout {
-        NavHeader {
-            title: TR2.lookup(TrId.AccountArchiveTitle);
-            left-icon: "chevron-left";
-
-            clicked => {
-                Callbacks.set-archive-mode(false);
-            }
+    PageHeader {
+        title: TR2.lookup(TrId.AccountArchiveTitle);
+        action-clicked => {
+            Callbacks.set-archive-mode(false);
         }
+    }
 
-        VerticalLayout {
-            padding-left: Size.sz4;
-            padding-right: Size.sz4;
-            padding-top: Size.sz4;
+    if root.has-passphrase: WalletSwitch { }
 
-            Flickable {
-                VerticalLayout {
-                    spacing: Size.sz6;
+    if Callbacks.accounts.length > 0: ScrollArea {
+        AccountList { }
+    }
 
-                    if has-passphrase: SegmentedControl {
-                        labels: [TR2.lookup(TrId.PassphraseDefault), TR2.lookup(TrId.PassphrasePassphrase)];
-                        icons: ["", "shield-passphrase"];
-                        selected-index: EnterPassphrase.slider-index;
-                        touch-factor: 1.5;
+    if Callbacks.accounts.length == 0: VerticalLayout {
+        vertical-stretch: 1;
+        alignment: center;
 
-                        changed(label, index) => {
-                            EnterPassphrase.slider-index = index;
-                            EnterPassphrase.switch-view(index);
-                        }
-                    }
-
-                    for acct[index] in Callbacks.accounts: AccountStatic {
-                        acct: acct;
-                        icon: "device";
-                        card-color: acct.color;
-                        clicked => {
-                            Navigate.account({ account-id: self.account-id }, { });
-                        }
-                    }
-                }
-            }
+        MutedText {
+            text: TR2.lookup(TrId.AccountArchiveNoArchivedAccounts);
+            horizontal-alignment: center;
         }
     }
 }
 
 export component HomePage inherits Rectangle {
-    if !Callbacks.archive-mode: AccountsPage { }
-    if Callbacks.archive-mode: ArchivePage { }
+    if !Callbacks.archive-mode: AccountsPage {
+        width: parent.width;
+        height: parent.height;
+    }
+
+    if Callbacks.archive-mode: ArchivePage {
+        width: parent.width;
+        height: parent.height;
+    }
 }

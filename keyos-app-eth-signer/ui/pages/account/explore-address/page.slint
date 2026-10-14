@@ -1,176 +1,181 @@
-// SPDX-FileCopyrightText: 2025 Foundation Devices, Inc. <hello@foundation.xyz>
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-FileCopyrightText: 2025 Ethereum Foundation
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
-import { BasePage, Icon, NavHeader, QrCodeCard, TextSm, CompressedBtcAddress, BtcAddress } from "../../../compat/widgets.slint";
-import { Size, Palette } from "../../../compat/theme.slint";
-import { TR2, TrId } from "../../../gen/tr.slint";
+// Every address of the account, derived lazily as the list scrolls; a tap
+// opens one in full with its QR, and steps to its neighbours with buttons
+// rather than a gesture.
 
-import { AccountProps } from "../props.slint";
-import { Navigate } from "../../../gen/navigate.slint";
-import { Callbacks } from "../../../callbacks.slint";
-import { Overlay } from "../../../widgets/overlay.slint";
+import { Theme, Images, ButtonVariant, ControlSize } from "@ui/theme.slint";
+import { Button } from "@ui/button.slint";
 import { ListView } from "std-widgets.slint";
+import { TR2, TrId } from "../../../gen/tr.slint";
+import { Navigate } from "../../../gen/navigate.slint";
+import { AccountProps } from "../props.slint";
+import { Callbacks } from "../../../callbacks.slint";
+import { Page, PageHeader, HeaderAction, PageMetrics } from "../../../components/layout.slint";
+import { Mono, MutedText, Jazzicon, ShortAddressText, HexBlock, QrPanel } from "../../../components/eth-widgets.slint";
 
-component AddressSwitch inherits Rectangle {
-    in property <bool> enabled;
-    in property <string> icon;
+component AddressDetail inherits Page {
+    in property <[string]> addresses;
+    in-out property <int> selected;
+    callback closed();
 
-    callback clicked();
+    property <string> address: root.addresses[root.selected];
 
-    height: Size.sz15;
-
-    VerticalLayout {
-        alignment: center;
-        HorizontalLayout {
-            alignment: center;
-            Icon {
-                name: root.icon;
-                color: enabled ? Palette.content-primary : Palette.content-tertiary;
-                size: Size.sz10;
-            }
+    PageHeader {
+        title: TR2.format(TrId.ExploreAddressesDetailTitle, [root.selected]);
+        action: HeaderAction.close;
+        action-clicked => {
+            root.closed();
         }
     }
 
-    TouchArea {
-        enabled: root.enabled;
-        clicked => {
-            root.clicked();
+    HorizontalLayout {
+        alignment: center;
+        vertical-stretch: 0;
+
+        Jazzicon {
+            address: root.address;
+            size: 56px;
+        }
+    }
+
+    HexBlock {
+        value: root.address;
+        groups-per-line: 5;
+        size: 22px;
+        center: true;
+        vertical-stretch: 0;
+    }
+
+    QrPanel {
+        data: root.address;
+        size: 320px;
+    }
+
+    MutedText {
+        text: TR2.lookup(TrId.ExploreAddressesDetailContent);
+        horizontal-alignment: center;
+    }
+
+    Rectangle { vertical-stretch: 1; }
+
+    HorizontalLayout {
+        spacing: Theme.spacing-sm;
+        vertical-stretch: 0;
+
+        Button {
+            text: TR2.lookup(TrId.CommonButtonPrevious);
+            variant: ButtonVariant.secondary;
+            start-icon: Images.icon("chevron-left", Theme.icon-size-md);
+            full-width: true;
+            disabled: root.selected <= 0;
+            clicked => {
+                root.selected = max(0, root.selected - 1);
+            }
+        }
+
+        Button {
+            text: TR2.lookup(TrId.CommonButtonNext);
+            variant: ButtonVariant.secondary;
+            end-icon: Images.icon("chevron-right", Theme.icon-size-md);
+            full-width: true;
+            disabled: root.selected >= root.addresses.length - 1;
+            clicked => {
+                root.selected = min(root.addresses.length - 1, root.selected + 1);
+            }
         }
     }
 }
 
-export component ExploreAddressPage inherits BasePage {
+export component ExploreAddressPage inherits Rectangle {
     in-out property <AccountProps> props;
 
-    // Ethereum: one keychain, one address format — no filter drawer.
-    property <[string]> addresses: Callbacks.account-addresses(props.account-id);
+    property <[string]> addresses: Callbacks.account-addresses(root.props.account-id);
+    property <int> selected: -1;
+    property <length> row-height: 64px;
 
-    property <int> selected-address: -1;
-    property <bool> can-subtract: selected-address > 0;
-    property <bool> can-add: selected-address < addresses.length - 1;
+    Page {
+        spacing: Theme.spacing-sm;
 
-    function subtract-address() {
-        if can-subtract {
-            selected-address = selected-address - 1;
-        }
-    }
-
-    function add-address() {
-        if can-add {
-            selected-address = selected-address + 1;
-        }
-    }
-
-    property <length> item-height: Size.sz14;
-
-    VerticalLayout {
-        NavHeader {
+        PageHeader {
             title: TR2.lookup(TrId.ExploreAddressesTitle);
-            clicked => {
+            action-clicked => {
                 Navigate.backward();
             }
         }
 
         ListView {
-            viewport-height: 1000 * item-height;
-            viewport-width: parent.width;
-            height: 688px;
-            width: parent.width;
-
+            vertical-stretch: 1;
             vertical-scrollbar-policy: always-off;
             mouse-drag-pan-enabled: true;
 
-            for address[index] in addresses: Rectangle {
-                width: root.width;
-                clip: true;
-                height: item-height;
+            for address[index] in root.addresses: Rectangle {
+                height: root.row-height;
+                background: touch.pressed ? Theme.palette-foreground.with-alpha(0.05) : transparent;
 
                 HorizontalLayout {
-                    padding-left: Size.sz8;
+                    spacing: Theme.spacing-md;
+                    padding-right: Theme.spacing-sm;
 
-                    alignment: start;
-                    spacing: Size.sz4;
-                    TextSm {
+                    Text {
+                        width: 44px;
+                        text: index;
                         vertical-alignment: center;
                         horizontal-alignment: right;
-                        text: "\{index}:";
-                        width: 36px;
-                        overflow: clip;
-                        wrap: no-wrap;
+                        color: Theme.palette-muted;
+                        font-family: Mono.family;
+                        font-size: 15px;
                     }
 
                     VerticalLayout {
                         alignment: center;
-                        CompressedBtcAddress {
+
+                        Jazzicon {
                             address: address;
+                            size: 32px;
                         }
+                    }
+
+                    VerticalLayout {
+                        alignment: center;
+                        horizontal-stretch: 1;
+
+                        ShortAddressText {
+                            address: address;
+                            size: 19px;
+                        }
+                    }
+
+                    Image {
+                        width: 22px;
+                        source: Images.icon("chevron-right", 22px);
+                        colorize: Theme.palette-muted;
                     }
                 }
 
-                TouchArea {
+                Rectangle {
+                    y: parent.height - 1px;
+                    height: 1px;
+                    background: Theme.palette-border.with-alpha(0.5);
+                }
+
+                touch := TouchArea {
                     clicked => {
-                        selected-address = index
+                        root.selected = index;
                     }
                 }
             }
         }
     }
 
-    Overlay {
-        open: selected-address > -1;
-        title: TR2.format(TrId.ExploreAddressesDetailTitle, [selected-address]);
+    if root.selected >= 0: AddressDetail {
+        width: root.width;
+        height: root.height;
+        addresses: root.addresses;
+        selected <=> root.selected;
         closed => {
-            selected-address = -1;
-        }
-
-        HorizontalLayout {
-            alignment: center;
-
-            VerticalLayout {
-                width: 424px;
-                alignment: start;
-                spacing: Size.sz3;
-
-                BtcAddress {
-                    address: addresses[selected-address];
-                    primary-color: Palette.content-primary;
-                    secondary-color: Palette.content-tertiary;
-                }
-
-                VerticalLayout {
-                    alignment: start;
-
-                    AddressSwitch {
-                        enabled: can-subtract;
-                        icon: "chevron-up";
-                        clicked => {
-                            subtract-address();
-                        }
-                    }
-
-                    HorizontalLayout {
-                        alignment: center;
-
-                        QrCodeCard {
-                            data: addresses[selected-address];
-                        }
-                    }
-
-                    AddressSwitch {
-                        enabled: can-add;
-                        icon: "chevron-down";
-                        clicked => {
-                            add-address();
-                        }
-                    }
-                }
-
-                TextSm {
-                    text: TR2.lookup(TrId.ExploreAddressesDetailContent);
-                    color: Palette.content-tertiary;
-                    horizontal-alignment: center;
-                }
-            }
+            root.selected = -1;
         }
     }
 }

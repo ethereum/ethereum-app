@@ -1,8 +1,5 @@
-// SPDX-FileCopyrightText: 2025 Foundation Devices, Inc. <hello@foundation.xyz>
-// SPDX-License-Identifier: GPL-3.0-or-later
-
-import { CardColor } from "compat/theme.slint";
-export { CardColor }
+// SPDX-FileCopyrightText: 2025 Ethereum Foundation
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 export struct SingleSigView {
     account-number: int,
@@ -13,7 +10,9 @@ export struct SingleSigView {
 export struct AccountView {
     id: string,
     name: string,
-    color: CardColor,
+    // EIP-55 address m/44'/60'/j'/0/0: the face of the account, and the seed
+    // of its Jazzicon. Empty until the wallet's keys are derived.
+    address: string,
     archived: bool,
 
     single: SingleSigView,
@@ -24,6 +23,9 @@ export global Callbacks {
     // False while the active wallet owns no account (active or archived):
     // there is nothing a sign request could be matched against.
     in property <bool> can-scan: false;
+    // Master fingerprint of the active wallet, upper case; empty until its
+    // keys are derived.
+    in property <string> fingerprint;
 
     in-out property <[AccountView]> accounts: [];
     pure callback account-details(account-id: string) -> AccountView;

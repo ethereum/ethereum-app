@@ -1,5 +1,5 @@
-# SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
-# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Ethereum Foundation
+# SPDX-License-Identifier: MIT OR Apache-2.0
 
 # Foundation application configuration
 app-name = "eth-signer"
@@ -20,6 +20,8 @@ support-url = "https://ethereum.org"
 # fs-generic is needed on top of gui-app: the account config is persisted to
 # Location::AppData, and gui-app only grants read-side fs messages.
 template = ["gui-app", "fs-generic"]
+# The collapsed control-center bar takes the colour of the page tint.
+"os/gui-server" = ["SetControlCenterColor"]
 "os/settings" = ["GetDeviceName", "GetLocale", "GetPrimeColor"]
 # The per-app seed roots the Ethereum keys. Grouped device-secrets.app-scoped-seed,
 # grantOnFirstUse -> the user sees one consent prompt the first time.

@@ -1,5 +1,5 @@
-// SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
-// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 Ethereum Foundation
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 import { Navigate } from "gen/navigate.slint";
 
@@ -18,9 +18,20 @@ export struct EthTxView {
     to: string,
     // False for contract creation, where `to` is a plain label.
     to-is-address: bool,
+    // The chain id the signature commits to, as a number; empty for a
+    // pre-EIP-155 transaction, which `replay-protected` flags.
     chain-id: string,
+    replay-protected: bool,
+    // The chain's name when this app knows it, else empty.
+    network: string,
+    // Decimal ETH without the unit ("0.25"), and the exact same value in wei,
+    // digits grouped ("250 000 000 000 000 000"); empty if it could not be
+    // derived.
     amount: string,
+    amount-wei: string,
+    // Decimal ETH, and the exact value in gwei.
     max-fees: string,
+    max-fees-gwei: string,
     tx-type: string,
     origin: string,
     has-data: bool,

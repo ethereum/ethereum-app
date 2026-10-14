@@ -1,52 +1,51 @@
-// SPDX-FileCopyrightText: 2025 Foundation Devices, Inc. <hello@foundation.xyz>
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-FileCopyrightText: 2025 Ethereum Foundation
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
+import { Theme, Images } from "@ui/theme.slint";
+import { Menu } from "@ui/menu.slint";
+import { MenuItem } from "@ui/menu_item.slint";
 import { TR2, TrId } from "../../gen/tr.slint";
-import { Size } from "../../compat/theme.slint";
-import { BasePage, PageBody, NavHeader, MenuSection, MenuSectionLayout, MenuActionItem } from "../../compat/widgets.slint";
-
 import { SettingsProps } from "props.slint";
 import { Settings, SeedSourceKind } from "../../settings.slint";
 import { Navigate } from "../../gen/navigate.slint";
+import { Page, PageHeader } from "../../components/layout.slint";
+import { Eyebrow } from "../../components/eth-widgets.slint";
 
-export component SettingsPage inherits BasePage {
+export component SettingsPage inherits Page {
     in property <SettingsProps> props;
 
-    // The choice, and the explanation of what it means, both live on the
-    // seed-source page; this row is only the way in and the current answer.
+    // The choice, and what it means, live on the seed-source page; this row is
+    // only the way in and the current answer.
     property <string> current: Settings.seed-source == SeedSourceKind.AppSeed
         ? TR2.lookup(TrId.SeedSourceAppTitle)
         : Settings.seed-source == SeedSourceKind.UserMnemonic
             ? TR2.lookup(TrId.SeedSourceMnemonicTitle)
             : TR2.lookup(TrId.SettingsSeedSourceNotSet);
 
-    VerticalLayout {
-        NavHeader {
-            title: TR2.lookup(TrId.SettingsTitle);
-            clicked => {
-                Navigate.backward();
-            }
+    PageHeader {
+        title: TR2.lookup(TrId.SettingsTitle);
+        action-clicked => {
+            Navigate.backward();
         }
+    }
 
-        PageBody {
-            VerticalLayout {
-                alignment: start;
-                padding: Size.sz4;
+    Eyebrow {
+        text: TR2.lookup(TrId.SettingsSeedSourceEyebrow);
+    }
 
-                MenuSection {
-                    title: TR2.lookup(TrId.SettingsSeedSourceTitle);
-                    MenuSectionLayout {
-                        MenuActionItem {
-                            label: root.current;
-                            first: true;
-                            last: true;
-                            clicked => {
-                                Navigate.seed-source({ });
-                            }
-                        }
-                    }
-                }
+    Menu {
+        full-width: true;
+
+        MenuItem {
+            label: root.current;
+            start-icon: Images.icon("lock", Theme.icon-size-md);
+            end-icon: Images.icon("chevron-right", Theme.icon-size-md);
+            divider: false;
+            clicked => {
+                Navigate.seed-source({ });
             }
         }
     }
+
+    Rectangle { vertical-stretch: 1; }
 }

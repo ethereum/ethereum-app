@@ -1,5 +1,5 @@
-// SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
-// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 Ethereum Foundation
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 //! Shared application state, wallet (seed + passphrase) management and the
 //! Slint account-list synchronisation.
@@ -10,7 +10,7 @@ use {
         eth_keys::KeyCache,
         seed_source,
         store::{AccountStore, SettingsStore},
-        AccountView, AppWindow, Callbacks, CardColor, EnterPassphrase, SingleSigView,
+        AccountView, AppWindow, Callbacks, EnterPassphrase, SingleSigView,
     },
     slint_keyos_platform::{
         slint::{self, ComponentHandle, ModelRc, VecModel},
@@ -95,7 +95,31 @@ impl AppState {
 
     pub fn get_account_view(&self, account_id: &AccountId) -> Option<AccountView> {
         let config = self.store.get(account_id)?;
-        Some(convert_account(account_id, &config))
+        Some(self.convert_account(account_id, &config))
+    }
+
+    /// An account as the UI shows it, with its first address when the
+    /// active wallet's keys are ready.
+    fn convert_account(&self, account_id: &AccountId, config: &crate::store::EthAccountConfig) -> AccountView {
+        let address = self
+            .keys()
+            .and_then(|keys| {
+                keys.address(account_id.index, 0)
+                    .inspect_err(|e| log::error!("address of account {account_id} failed: {e:?}"))
+                    .ok()
+            })
+            .unwrap_or_default();
+        AccountView {
+            id: account_id.to_string().into(),
+            name: config.name.clone().into(),
+            address: address.into(),
+            archived: config.archived,
+            single: SingleSigView {
+                account_number: account_id.index as i32,
+                fingerprint: config.fingerprint.to_uppercase().into(),
+                public_key: "".into(),
+            },
+        }
     }
 
     pub fn refresh_slint_accounts(&self) {
@@ -105,13 +129,14 @@ impl AppState {
             .store
             .accounts_for(&fingerprint)
             .filter(|(_id, config)| config.archived == self.archive_mode)
-            .map(|(id, config)| convert_account(&id, &config))
+            .map(|(id, config)| self.convert_account(&id, &config))
             .collect();
         self.model.extend(accounts);
 
         let ui = self.ui();
         let cb = ui.global::<Callbacks>();
         cb.set_accounts(ModelRc::from(self.model.clone()));
+        cb.set_fingerprint(fingerprint.to_uppercase().into());
         // Scanning a sign request is pointless (and blocked) until the active
         // wallet owns at least one account, archived or not.
         cb.set_can_scan(!fingerprint.is_empty() && self.store.count_for(&fingerprint) > 0);
@@ -270,58 +295,3 @@ impl AppState {
     }
 }
 
-fn convert_account(account_id: &AccountId, config: &crate::store::EthAccountConfig) -> AccountView {
-    AccountView {
-        id: account_id.to_string().into(),
-        name: config.name.clone().into(),
-        color: AccountColor::for_account_index(account_id.index).into(),
-        archived: config.archived,
-        single: SingleSigView {
-            account_number: account_id.index as i32,
-            fingerprint: config.fingerprint.to_uppercase().into(),
-            public_key: "".into(),
-        },
-    }
-}
-
-#[derive(Debug, Default, Clone, Copy)]
-pub enum AccountColor {
-    DarkGrey,
-    Purple,
-    Green,
-    Pine,
-    #[default]
-    LightCopper,
-    DarkCopper,
-    Teal,
-    Blue,
-}
-
-impl AccountColor {
-    // Match Core/Envoy's acct_num % 6 cycling (same as the Bitcoin app).
-    pub fn for_account_index(index: u32) -> Self {
-        match index % 6 {
-            0 => AccountColor::DarkCopper,
-            1 => AccountColor::Blue,
-            2 => AccountColor::Pine,
-            3 => AccountColor::LightCopper,
-            4 => AccountColor::Teal,
-            _ => AccountColor::Green,
-        }
-    }
-}
-
-impl From<AccountColor> for CardColor {
-    fn from(color: AccountColor) -> Self {
-        match color {
-            AccountColor::DarkGrey => CardColor::DarkGrey,
-            AccountColor::Purple => CardColor::Purple,
-            AccountColor::Green => CardColor::Green,
-            AccountColor::Pine => CardColor::Pine,
-            AccountColor::LightCopper => CardColor::LightCopper,
-            AccountColor::DarkCopper => CardColor::DarkCopper,
-            AccountColor::Teal => CardColor::Teal,
-            AccountColor::Blue => CardColor::Blue,
-        }
-    }
-}
