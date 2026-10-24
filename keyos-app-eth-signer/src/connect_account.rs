@@ -1,5 +1,5 @@
-// SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
-// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 Ethereum Foundation
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 //! Connect-wallet flow: exports the account's extended public key as an
 //! ERC-4527 `crypto-hdkey` UR for a watch-only wallet to scan.

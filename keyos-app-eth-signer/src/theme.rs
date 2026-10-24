@@ -1,5 +1,5 @@
-// SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
-// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 Ethereum Foundation
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // App theming.
 //
@@ -7,21 +7,27 @@
 // `theme` in app-config.toml and compiled to Rust by the Foundation CLI. Use
 // `foundation theme` to edit it visually.
 //
-// The generated app theme inherits the built-in theme without overriding its
-// colors, typography, spacing, or component styles.
+// The app theme carries ethereum.org's palette (resources/theme.json) and
+// otherwise inherits the built-in theme.
 
 slint_keyos_platform::settings::use_api!(
     slint_keyos_platform::settings,
     slint_keyos_platform::server
 );
 
-use foundation_themes::ColorScheme;
-use slint_keyos_platform::slint::ComponentHandle;
+use {
+    foundation_themes::ColorScheme,
+    slint_keyos_platform::{gui_server_api::ControlCenterColor, slint::ComponentHandle},
+    std::rc::Rc,
+};
 
 foundation_themes::include_theme!(app_theme);
 
-pub fn init(ui: &crate::AppWindow) {
-    apply_system_theme(ui, SettingsApi::default().get_system_theme());
+/// Paints the collapsed control-center bar while this app is in front.
+pub type SetBarColor = Rc<dyn Fn(Option<ControlCenterColor>)>;
+
+pub fn init(ui: &crate::AppWindow, set_bar: SetBarColor) {
+    apply_system_theme(ui, &set_bar, SettingsApi::default().get_system_theme());
 
     let ui_weak = ui.as_weak();
     let mut updates = slint_keyos_platform::subscribe_scalar::<settings_permissions::SettingsPermissions, _>(
@@ -32,7 +38,7 @@ pub fn init(ui: &crate::AppWindow) {
             let Some(ui) = ui_weak.upgrade() else {
                 break;
             };
-            apply_system_theme(&ui, system_theme);
+            apply_system_theme(&ui, &set_bar, system_theme);
         }
     })
     .detach();
@@ -40,6 +46,7 @@ pub fn init(ui: &crate::AppWindow) {
 
 fn apply_system_theme(
     ui: &crate::AppWindow,
+    set_bar: &SetBarColor,
     system_theme: settings_permissions::settings::global::SystemTheme,
 ) {
     let scheme = match system_theme {
@@ -51,10 +58,8 @@ fn apply_system_theme(
     // sizes, named text-role font sizes).
     foundation_themes::apply_theme!(ui, app_theme::theme(), scheme);
 
-    // Keep the legacy compat theme (Palette/CurrentTheme in ui/compat) in sync
-    // with the system scheme.
-    ui.global::<crate::CurrentTheme>().set_palette(match scheme {
-        ColorScheme::Dark => crate::Palettes::Dark,
-        ColorScheme::Light => crate::Palettes::Light,
-    });
+    // The bar takes the colour the page tint starts with, just below it
+    // (ui/components/layout.slint, Wash), so the two read as one surface.
+    let bar = ui.global::<crate::Wash>().get_bar();
+    set_bar(Some(ControlCenterColor::new(bar.red(), bar.green(), bar.blue())));
 }

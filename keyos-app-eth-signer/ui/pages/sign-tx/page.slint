@@ -1,270 +1,532 @@
-// SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
-// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 Ethereum Foundation
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
-// Ethereum signing review. All three request kinds -- transaction, EIP-712
-// typed data and EIP-191 message -- share one ui2 surface: a tab bar, a
-// fixed-height panel, and Back/Next buttons that page the panel a screenful
-// at a time. See review.slint for why the payload is paged rather than
-// flicked.
+// Ethereum signing. A transaction, an EIP-712 typed-data message or an
+// EIP-191 message is reviewed on one scrolling page, in the order the
+// Ethereum Foundation's guidelines list the fields; every digest opens on a
+// Verify view with its QR for third-party checking.
 //
-// The page's geometry is fixed by construction. Every part has a constant
-// height and the panel absorbs whatever the warning row takes, so the sign
-// control cannot be pushed off the bottom of the screen by a longer payload.
+// Reading the request is the security step, so signing unlocks only once the
+// page has been scrolled to its end, and getting there never depends on a
+// gesture: a finger that starts slowly on the hardware routinely fails
+// Flickable's 8px-in-500ms drag threshold, so "Keep reading" pages down a
+// screenful at a time. The slide to sign replaces it at the end.
 
-import { NavHeader, BasePage, TextSm, TextMd, Button, PageBody, ContentSection, ButtonSection, JumboIconPageBody, TimerCircularProgress, HeadingMd, WrappedIcon, QrCodeCard, Icon } from "../../compat/widgets.slint";
-import { Palette, Size, Importance } from "../../compat/theme.slint";
+import { Theme, Images, ButtonVariant, ControlSize } from "@ui/theme.slint";
+import { Button } from "@ui/button.slint";
+import { Chip, ChipVariant, ChipColor, ChipSize } from "@ui/chip.slint";
+import { SlideToConfirm } from "@ui/slide_to_confirm.slint";
+import { SegmentedControl } from "@ui/segmented_control.slint";
 import { TR2, TrId } from "../../gen/tr.slint";
-
 import { SignTxProps } from "./props.slint";
 import { SignTx, SignTxState, SignRequestKind, EthTxView, EthTypedDataView, EthMessageView } from "../../sign-tx.slint";
+import { Page, PageHeader, HeaderAction, ScrollArea, PageMetrics } from "../../components/layout.slint";
+import { Mono, Eyebrow, BodyText, MutedText, Panel, PanelDivider, Field, HexBlock, AddressBlock, QrPanel, Notice, NoticeTone } from "../../components/eth-widgets.slint";
+import { StatusView, StatusKind } from "../../components/status.slint";
 
-import { SignReview } from "review.slint";
-import { Button as Ui2Button } from "@ui/button.slint";
-import { SlideToConfirm } from "@ui/slide_to_confirm.slint";
-import { Theme, ControlSize, ButtonVariant } from "@ui/theme.slint";
+// Width of text inside a panel: fixed, never read back from a layout.
+global ReviewMetrics {
+    out property <length> text-width: PageMetrics.content-width - 2 * Theme.spacing-lg;
+}
 
-component WarningRow inherits HorizontalLayout {
-    in property <string> text;
+// A number with its unit, then the exact value in a smaller unit beneath.
+component Amount inherits VerticalLayout {
+    in property <string> value;
+    in property <string> unit: "ETH";
+    in property <string> exact;
+    in property <string> exact-unit;
+    in property <length> size: 44px;
 
-    alignment: center;
-    spacing: Size.sz2;
+    // Long values step down so 18 decimals still fit the line.
+    property <length> fitted: root.value.character-count > 16 ? root.size * 0.5
+        : root.value.character-count > 10 ? root.size * 0.7
+        : root.size;
 
-    VerticalLayout {
-        alignment: center;
-        Icon {
-            name: "alert";
-            color: Palette.content-notice;
-            size: Size.sz5;
+    spacing: 4px;
+
+    // The unit sits right after the number; a value too long for the line
+    // wraps instead of pushing the unit off.
+    HorizontalLayout {
+        spacing: Theme.spacing-sm;
+        alignment: start;
+
+        Text {
+            text: root.value;
+            horizontal-stretch: 1;
+            max-width: self.preferred-width;
+            color: Theme.palette-foreground;
+            font-family: Theme.font-primary;
+            font-size: root.fitted;
+            font-weight: Theme.font-weight-medium;
+            wrap: char-wrap;
+        }
+
+        Text {
+            text: root.unit;
+            vertical-alignment: bottom;
+            color: Theme.palette-muted;
+            font-family: Theme.font-primary;
+            font-size: max(Theme.font-size-body, root.fitted * 0.55);
+            font-weight: Theme.font-weight-medium;
         }
     }
 
-    TextSm {
-        text: root.text;
-        color: Palette.content-notice;
-        vertical-alignment: center;
-        wrap: word-wrap;
-        width: 380px;
+    if root.exact != "": Text {
+        width: ReviewMetrics.text-width;
+        text: root.exact + " " + root.exact-unit;
+        color: Theme.palette-muted;
+        font-family: Mono.family;
+        font-size: 15px;
+        wrap: char-wrap;
     }
 }
 
-component SignPage inherits VerticalLayout {
-    property <bool> signing: SignTx.state == SignTxState.Signing;
-    property <SignRequestKind> kind: SignTx.kind;
-    property <bool> typed: kind == SignRequestKind.TypedData;
-    property <bool> message: kind == SignRequestKind.Message;
-    property <bool> transaction: kind == SignRequestKind.Transaction;
-    property <EthTxView> tx: SignTx.pending-tx;
-    property <EthTypedDataView> td: SignTx.pending-typed-data;
-    property <EthMessageView> msg: SignTx.pending-message;
+// A digest on the review page, with the way into its Verify view.
+component DigestPanel inherits Panel {
+    in property <string> label;
+    in property <string> value;
+    in property <string> button-text: TR2.lookup(TrId.SignTxShowQr);
+    callback verify();
 
-    // A warning takes its band out of the panel instead of pushing everything
-    // below it down and off the screen.
-    property <bool> warn: (transaction && tx.has-data) || (message && !msg.displayable);
+    Field {
+        label: root.label;
 
-    NavHeader {
-        title: typed ? TR2.lookup(TrId.SignTxTypedDataTitle)
-            : message ? TR2.lookup(TrId.SignMessageTitle)
-            : TR2.lookup(TrId.SigningTransactionTitle);
-        left-icon: "chevron-left";
-
-        clicked => {
-            SignTx.done();
+        HexBlock {
+            value: root.value;
+            groups-per-line: 4;
+            size: 20px;
         }
     }
 
-    VerticalLayout {
-        alignment: space-between;
-        padding-left: Size.sz4;
-        padding-right: Size.sz4;
-        padding-bottom: Size.sz4;
+    Button {
+        text: root.button-text;
+        variant: ButtonVariant.secondary;
+        size: ControlSize.sm;
+        full-width: true;
+        clicked => {
+            root.verify();
+        }
+    }
+}
 
-        VerticalLayout {
-            alignment: start;
-            spacing: Size.sz2;
+component TransactionReview inherits VerticalLayout {
+    in property <EthTxView> tx;
+    callback verify-digest();
 
-            Text {
-                text: typed ? TR2.lookup(TrId.SignTxTypedDataSubheader)
-                    : message ? TR2.lookup(TrId.SignTxMessageSubheader)
-                    : TR2.lookup(TrId.SigningTransactionSubheader);
-                color: Theme.palette-muted;
-                horizontal-alignment: center;
-                wrap: word-wrap;
-                font-family: Theme.font-primary;
-                font-size: Theme.font-size-subtitle;
+    spacing: Theme.spacing-lg;
+
+    if !root.tx.replay-protected: Notice {
+        text: TR2.lookup(TrId.SignTxAllChainsWarning);
+        tone: NoticeTone.danger;
+    }
+
+    if root.tx.has-data: Notice {
+        text: TR2.lookup(TrId.SignTxDataWarning);
+    }
+
+    Panel {
+        Field {
+            label: TR2.lookup(TrId.SignTxEyebrowAmount);
+
+            Amount {
+                value: root.tx.amount;
+                exact: root.tx.amount-wei;
+                exact-unit: "wei";
             }
+        }
+    }
 
-            if warn: WarningRow {
-                text: transaction ? TR2.lookup(TrId.SignTxDataWarning)
-                    : TR2.lookup(TrId.SignTxMessageWarning);
-            }
+    Panel {
+        Field {
+            label: TR2.lookup(TrId.SignTxEyebrowNetwork);
 
-            review := SignReview {
-                avail-height: warn ? 428px : 504px;
+            HorizontalLayout {
+                alignment: start;
+                spacing: Theme.spacing-sm;
 
-                // The transaction lists its fields; the other two wrap text.
-                fields-mode: transaction;
-                tx: tx;
-                body: typed ? td.json : msg.text;
+                Chip {
+                    text: !root.tx.replay-protected ? root.tx.chain-id
+                        : root.tx.network != "" ? root.tx.network
+                        : TR2.lookup(TrId.SignTxUnknownNetwork);
+                    variant: ChipVariant.soft;
+                    color: root.tx.replay-protected ? ChipColor.primary : ChipColor.danger;
+                    size: ChipSize.md;
+                }
 
-                // Captions are kept short: four tabs share 448px.
-                tab-labels: transaction
-                    ? (tx.has-data
-                        ? [TR2.lookup(TrId.SignTxTabDetails), TR2.lookup(TrId.SignTxTabData)]
-                        : [TR2.lookup(TrId.SignTxTabDetails)])
-                    : typed
-                        ? [TR2.lookup(TrId.SignTxMessageTitle), TR2.lookup(TrId.SignTxTabEip712),
-                           TR2.lookup(TrId.SignTxTabDomain), TR2.lookup(TrId.SignTxTabHash)]
-                        : [TR2.lookup(TrId.SignTxMessageTitle), TR2.lookup(TrId.SignTxTabDigest)];
-
-                // Index 0 is the payload tab and carries no hash.
-                hash-values: transaction
-                    ? ["", tx.data-digest]
-                    : typed
-                        ? ["", td.eip712-digest, td.domain-hash, td.message-hash]
-                        : ["", msg.eip191-digest];
+                if root.tx.replay-protected: Text {
+                    text: TR2.format(TrId.SignTxChainIdValue, [root.tx.chain-id]);
+                    vertical-alignment: center;
+                    color: Theme.palette-muted;
+                    font-family: Mono.family;
+                    font-size: 16px;
+                }
             }
         }
 
-        if !signing: VerticalLayout {
-            alignment: end;
-            spacing: Size.sz2;
+        PanelDivider { }
 
-            Ui2Button {
-                text: TR2.lookup(TrId.CommonButtonCancel);
-                variant: ButtonVariant.tertiary;
-                size: ControlSize.md;
-                full-width: true;
+        Field {
+            label: TR2.lookup(TrId.SignTxEyebrowFrom);
 
-                clicked => {
-                    SignTx.done();
+            AddressBlock {
+                address: root.tx.from;
+            }
+        }
+
+        PanelDivider { }
+
+        Field {
+            label: TR2.lookup(TrId.SignTxEyebrowTo);
+
+            if root.tx.to-is-address: AddressBlock {
+                address: root.tx.to;
+            }
+
+            if !root.tx.to-is-address: BodyText {
+                text: root.tx.to;
+            }
+        }
+
+        PanelDivider { }
+
+        Field {
+            label: TR2.lookup(TrId.SignTxEyebrowMaxFees);
+
+            Amount {
+                value: root.tx.max-fees;
+                size: Theme.font-size-body;
+                exact: root.tx.max-fees-gwei;
+                exact-unit: "gwei";
+            }
+        }
+
+        PanelDivider { }
+
+        Field {
+            label: TR2.lookup(TrId.SignTxEyebrowType);
+
+            BodyText {
+                text: root.tx.tx-type;
+            }
+        }
+    }
+
+    if root.tx.has-data: DigestPanel {
+        label: TR2.lookup(TrId.SignTxEyebrowCalldataDigest);
+        value: root.tx.data-digest;
+        verify => {
+            root.verify-digest();
+        }
+    }
+}
+
+component TypedDataReview inherits VerticalLayout {
+    in property <EthTypedDataView> td;
+    callback verify-digest();
+
+    spacing: Theme.spacing-lg;
+
+    Panel {
+        Field {
+            label: TR2.lookup(TrId.SignTxEyebrowMessage);
+
+            Text {
+                width: ReviewMetrics.text-width;
+                text: root.td.json;
+                color: Theme.palette-foreground;
+                font-family: Mono.family;
+                font-size: 15px;
+                wrap: char-wrap;
+            }
+        }
+    }
+
+    DigestPanel {
+        label: TR2.lookup(TrId.SignTxEyebrowEip712Digest);
+        value: root.td.eip712-digest;
+        button-text: TR2.lookup(TrId.SignTxVerifyHashes);
+        verify => {
+            root.verify-digest();
+        }
+    }
+}
+
+component MessageReview inherits VerticalLayout {
+    in property <EthMessageView> msg;
+    callback verify-digest();
+
+    spacing: Theme.spacing-lg;
+
+    if !root.msg.displayable: Notice {
+        text: TR2.lookup(TrId.SignTxMessageWarning);
+    }
+
+    Panel {
+        Field {
+            label: TR2.lookup(TrId.SignTxEyebrowMessage);
+
+            Text {
+                width: ReviewMetrics.text-width;
+                text: root.msg.text;
+                color: Theme.palette-foreground;
+                font-family: root.msg.displayable ? Theme.font-primary : Mono.family;
+                font-size: root.msg.displayable ? Theme.font-size-body : 15px;
+                wrap: root.msg.displayable ? word-wrap : char-wrap;
+            }
+        }
+    }
+
+    DigestPanel {
+        label: TR2.lookup(TrId.SignTxEyebrowEip191Digest);
+        value: root.msg.eip191-digest;
+        verify => {
+            root.verify-digest();
+        }
+    }
+}
+
+// Third-party verification: one hash at a time, as text and as a QR.
+component VerifyView inherits Page {
+    in property <[string]> tabs;
+    in property <[string]> labels;
+    in property <[string]> values;
+    in-out property <int> tab: 0;
+    callback back();
+
+    PageHeader {
+        title: TR2.lookup(TrId.SignTxVerifyTitle);
+        action-clicked => {
+            root.back();
+        }
+    }
+
+    MutedText {
+        text: TR2.lookup(TrId.SignTxVerifyContent);
+    }
+
+    if root.values.length > 1: SegmentedControl {
+        options: root.tabs;
+        selected-index <=> root.tab;
+        vertical-stretch: 0;
+    }
+
+    VerticalLayout {
+        spacing: Theme.spacing-sm;
+        vertical-stretch: 0;
+
+        Eyebrow {
+            text: root.labels[root.tab];
+            horizontal-alignment: center;
+        }
+
+        HexBlock {
+            value: root.values[root.tab];
+            groups-per-line: 4;
+            size: 22px;
+            center: true;
+        }
+    }
+
+    QrPanel {
+        data: root.values[root.tab];
+        size: 260px;
+    }
+
+    Rectangle { vertical-stretch: 1; }
+
+    Button {
+        text: TR2.lookup(TrId.SignTxBackToReview);
+        variant: ButtonVariant.secondary;
+        full-width: true;
+        clicked => {
+            root.back();
+        }
+    }
+}
+
+component ReviewPage inherits Rectangle {
+    property <SignRequestKind> kind: SignTx.kind;
+    property <bool> signing: SignTx.state == SignTxState.Signing;
+    property <bool> latched: false;
+    // Fits on one screen, or has been scrolled to its end at least once.
+    // Latched: paging back up never locks signing again.
+    property <bool> read: scroll.at-end || root.latched;
+    property <bool> verify-open: false;
+    property <int> verify-tab: 0;
+    property <string> origin: root.kind == SignRequestKind.TypedData ? SignTx.pending-typed-data.origin
+        : root.kind == SignRequestKind.Message ? SignTx.pending-message.origin
+        : SignTx.pending-tx.origin;
+
+    Page {
+        PageHeader {
+            title: root.kind == SignRequestKind.TypedData ? TR2.lookup(TrId.SignTxTypedDataTitle)
+                : root.kind == SignRequestKind.Message ? TR2.lookup(TrId.SignMessageTitle)
+                : TR2.lookup(TrId.SigningTransactionTitle);
+            subtitle: root.origin != "" ? TR2.format(TrId.SignTxRequestedBy, [root.origin]) : "";
+            action: HeaderAction.close;
+            action-clicked => {
+                SignTx.done();
+            }
+        }
+
+        scroll := ScrollArea {
+            changed at-end => {
+                if (self.at-end) {
+                    root.latched = true;
                 }
             }
 
-            // Signing stays locked until the payload has been paged to its
-            // end, so nothing can be approved unseen.
-            SlideToConfirm {
+            if root.kind == SignRequestKind.Transaction: TransactionReview {
+                tx: SignTx.pending-tx;
+                verify-digest => {
+                    root.verify-tab = 0;
+                    root.verify-open = true;
+                }
+            }
+
+            if root.kind == SignRequestKind.TypedData: TypedDataReview {
+                td: SignTx.pending-typed-data;
+                verify-digest => {
+                    root.verify-tab = 0;
+                    root.verify-open = true;
+                }
+            }
+
+            if root.kind == SignRequestKind.Message: MessageReview {
+                msg: SignTx.pending-message;
+                verify-digest => {
+                    root.verify-tab = 0;
+                    root.verify-open = true;
+                }
+            }
+        }
+
+        // One fixed-height slot for whichever control is current: the scroll
+        // area's height must not depend on `read`, which depends on it.
+        Rectangle {
+            height: 64px;
+            vertical-stretch: 0;
+
+            if root.signing: Button {
+                width: parent.width;
+                text: TR2.lookup(TrId.CommonSlideToSignSigning);
+                variant: ButtonVariant.secondary;
+                loading: true;
+                disabled: true;
+                full-width: true;
+            }
+
+            if !root.signing && !root.read: Button {
+                width: parent.width;
+                text: TR2.lookup(TrId.SignTxKeepReading);
+                variant: ButtonVariant.secondary;
+                end-icon: Images.icon("chevron-down", Theme.icon-size-md);
+                full-width: true;
+                clicked => {
+                    scroll.page-down();
+                }
+            }
+
+            if !root.signing && root.read: SlideToConfirm {
+                width: parent.width;
                 label: TR2.lookup(TrId.CommonSlideToSignSign);
                 hint: TR2.lookup(TrId.CommonSlideToSignHelper);
-                size: ControlSize.md;
-                disabled: !review.read-to-end;
-
                 activated => {
                     SignTx.sign-tx();
                 }
             }
         }
+    }
 
-        if signing: Ui2Button {
-            text: TR2.lookup(TrId.CommonSlideToSignSigning);
-            variant: ButtonVariant.tertiary;
-            size: ControlSize.md;
-            loading: true;
-            disabled: true;
-            full-width: true;
+    if root.verify-open: VerifyView {
+        width: root.width;
+        height: root.height;
+        tab <=> root.verify-tab;
+        tabs: root.kind == SignRequestKind.TypedData
+            ? [TR2.lookup(TrId.SignTxTabDigest), TR2.lookup(TrId.SignTxTabDomain), TR2.lookup(TrId.SignTxTabHash)]
+            : [TR2.lookup(TrId.SignTxTabDigest)];
+        labels: root.kind == SignRequestKind.TypedData
+            ? [TR2.lookup(TrId.SignTxEyebrowEip712Digest), TR2.lookup(TrId.SignTxEyebrowDomainHash), TR2.lookup(TrId.SignTxEyebrowMessageHash)]
+            : root.kind == SignRequestKind.Message
+                ? [TR2.lookup(TrId.SignTxEyebrowEip191Digest)]
+                : [TR2.lookup(TrId.SignTxEyebrowCalldataDigest)];
+        values: root.kind == SignRequestKind.TypedData
+            ? [SignTx.pending-typed-data.eip712-digest, SignTx.pending-typed-data.domain-hash, SignTx.pending-typed-data.message-hash]
+            : root.kind == SignRequestKind.Message
+                ? [SignTx.pending-message.eip191-digest]
+                : [SignTx.pending-tx.data-digest];
+        back => {
+            root.verify-open = false;
         }
     }
 }
 
-component VerifyingPage inherits JumboIconPageBody {
-    ContentSection {
-        HorizontalLayout {
-            alignment: center;
-            TimerCircularProgress {
-                indeterminate: true;
-            }
-        }
-
-        HeadingMd {
-            text: TR2.lookup(TrId.ValidatingTransactionTitle);
-            horizontal-alignment: center;
-        }
-    }
-}
-
-component SuccessPage inherits VerticalLayout {
-    NavHeader {
+component SuccessPage inherits Page {
+    PageHeader {
         title: TR2.lookup(TrId.SigningTransactionSuccessQRTitle);
-        left-icon: "chevron-left";
-
-        clicked => {
+        action: HeaderAction.close;
+        action-clicked => {
             SignTx.done();
         }
     }
 
-    PageBody {
-        ContentSection {
-            TextMd {
-                text: TR2.lookup(TrId.SigningTransactionSuccessQRSubheader);
-                color: Palette.content-tertiary;
-                horizontal-alignment: center;
-            }
+    MutedText {
+        text: TR2.lookup(TrId.SignTxSuccessContent);
+    }
 
-            HorizontalLayout {
-                alignment: center;
+    Rectangle { vertical-stretch: 1; }
 
-                QrCodeCard {
-                    data: SignTx.signature-ur;
-                }
-            }
-        }
+    QrPanel {
+        data: SignTx.signature-ur;
+        size: 400px;
+    }
 
-        ButtonSection {
-            Button {
-                importance: primary;
-                icon: "";
-                label: TR2.lookup(TrId.CommonButtonDone);
-                clicked => {
-                    SignTx.done();
-                }
-            }
+    Rectangle { vertical-stretch: 1; }
+
+    Button {
+        text: TR2.lookup(TrId.CommonButtonDone);
+        full-width: true;
+        clicked => {
+            SignTx.done();
         }
     }
 }
 
-component ErrorPage inherits JumboIconPageBody {
-    ContentSection {
-        HorizontalLayout {
-            alignment: center;
-            WrappedIcon {
-                inner-icon: "close";
-            }
-        }
+export component SignTxPage inherits Rectangle {
+    in property <SignTxProps> props;
 
-        VerticalLayout {
-            spacing: Size.sz5;
+    property <SignTxState> state: SignTx.state;
 
-            HeadingMd {
-                text: TR2.lookup(TrId.InvalidQrHeader);
-                horizontal-alignment: center;
-            }
+    if root.state == SignTxState.Verifying: StatusView {
+        kind: StatusKind.working;
+        heading: TR2.lookup(TrId.ValidatingTransactionTitle);
 
-            TextMd {
-                text: SignTx.error-message;
-                horizontal-alignment: center;
-                color: Palette.content-secondary;
-                wrap: word-wrap;
-            }
-        }
+        Rectangle { vertical-stretch: 1; }
     }
 
-    ButtonSection {
+    if root.state == SignTxState.Sign || root.state == SignTxState.Signing: ReviewPage {
+        width: parent.width;
+        height: parent.height;
+    }
+
+    if root.state == SignTxState.Success: SuccessPage {
+        width: parent.width;
+        height: parent.height;
+    }
+
+    if root.state == SignTxState.Error || root.state == SignTxState.Idle: StatusView {
+        kind: StatusKind.failure;
+        heading: TR2.lookup(TrId.InvalidQrHeader);
+        message: SignTx.error-message;
+
+        Rectangle { vertical-stretch: 1; }
+
         Button {
-            importance: Importance.primary;
-            label: TR2.lookup(TrId.CommonButtonDone);
+            text: TR2.lookup(TrId.CommonButtonDone);
+            full-width: true;
             clicked => {
                 SignTx.done();
             }
         }
     }
-}
-
-export component SignTxPage inherits BasePage {
-    in property <SignTxProps> props;
-
-    property <SignTxState> state: SignTx.state;
-
-    if state == SignTxState.Verifying: VerifyingPage { }
-    if state == SignTxState.Sign || state == SignTxState.Signing: SignPage { }
-    if state == SignTxState.Success: SuccessPage { }
-    if state == SignTxState.Error || state == SignTxState.Idle: ErrorPage { }
 }

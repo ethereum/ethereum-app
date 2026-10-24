@@ -1,5 +1,29 @@
 {
   "id": "app_theme",
   "name": "eth-signer",
-  "parent": "base_theme"
+  "parent": "base_theme",
+  "tokens": {
+    "colors": {
+      "light": {
+        "primary": "#6C24DF",
+        "primary-pressed": "#561BB5",
+        "secondary": "#EDE2FF",
+        "danger": "#B91C1C",
+        "surface": "#F7F7F7",
+        "background": "#FFFFFF",
+        "text": "#121212",
+        "text-muted": "#616161"
+      },
+      "dark": {
+        "primary": "#945AF4",
+        "primary-pressed": "#6C24DF",
+        "secondary": "#1E0546",
+        "danger": "#DC2626",
+        "surface": "#121212",
+        "background": "#000000",
+        "text": "#EDEDED",
+        "text-muted": "#8C8C8C"
+      }
+    }
+  }
 }

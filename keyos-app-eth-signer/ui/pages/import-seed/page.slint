@@ -1,5 +1,5 @@
-// SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
-// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 Ethereum Foundation
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 // One word at a time, from my-coin's import flow. See my-coin's page for the
 // layout rationale (keyboard avoidance: everything pins vertical-stretch 0,
@@ -18,7 +18,8 @@ import { TR2, TrId } from "../../gen/tr.slint";
 import { Navigate } from "../../gen/navigate.slint";
 import { ImportSeed } from "../../import-seed.slint";
 import { ImportSeedProps } from "./props.slint";
-import { PageShell, ImportScrollBody, WordPill } from "../../widgets/import-widgets.slint";
+import { ImportScrollBody, WordPill } from "../../components/import-widgets.slint";
+import { Page, PageHeader } from "../../components/layout.slint";
 
 export component ImportSeedPage inherits Rectangle {
     in property <ImportSeedProps> props;
@@ -37,13 +38,15 @@ export component ImportSeedPage inherits Rectangle {
         root.draft = "";
     }
 
-    PageShell {
+    Page {
         width: 100%;
         height: 100%;
-        title: TR2.lookup(TrId.ImportSeedTitle);
-        show-back: true;
-        back => {
-            Navigate.backward();
+
+        PageHeader {
+            title: TR2.lookup(TrId.ImportSeedTitle);
+            action-clicked => {
+                Navigate.backward();
+            }
         }
 
         if ImportSeed.entered == 0: SegmentedControl {

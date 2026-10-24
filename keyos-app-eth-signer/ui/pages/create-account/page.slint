@@ -1,196 +1,171 @@
-// SPDX-FileCopyrightText: 2025 Foundation Devices, Inc. <hello@foundation.xyz>
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-FileCopyrightText: 2025 Ethereum Foundation
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
+// A new account: a label, and under the advanced options the BIP-44 account
+// index, defaulting to the first free one.
+
+import { Theme, Images, ButtonVariant } from "@ui/theme.slint";
+import { Button } from "@ui/button.slint";
+import { Input } from "@ui/input.slint";
 import { CreateAccountProps } from "./props.slint";
 import { CreateAccount, CreateAccountState } from "../../create-account.slint";
-import { IconButton, AppHeader, BasePage, PageBody,
-         ContentSection,
-         TitledInput, ButtonSection, Button, TextMd, ShowHide,
-         TimerCircularProgress, NavHeader, HeadingMd,
-         WrappedIcon, JumboIconPageBody
-     } from "../../compat/widgets.slint";
-import { Palette, Size, Importance, CardColor } from "../../compat/theme.slint";
 import { Navigate } from "../../gen/navigate.slint";
 import { TR2, TrId } from "../../gen/tr.slint";
+import { Page, PageHeader, ScrollArea } from "../../components/layout.slint";
+import { Mono, MutedText } from "../../components/eth-widgets.slint";
+import { StatusView, StatusKind } from "../../components/status.slint";
 
+component Disclosure inherits Rectangle {
+    in property <string> text;
+    in-out property <bool> open;
 
-component LoadingPage inherits JumboIconPageBody {
-    ContentSection {
-        HorizontalLayout {
-            alignment: center;
-            TimerCircularProgress {
-                indeterminate: true;
-            }
+    height: 48px;
+
+    HorizontalLayout {
+        spacing: Theme.spacing-sm;
+
+        Text {
+            text: root.text;
+            horizontal-stretch: 1;
+            vertical-alignment: center;
+            color: Theme.palette-foreground;
+            font-family: Theme.font-primary;
+            font-size: Theme.font-size-subtitle;
+            font-weight: Theme.font-weight-medium;
         }
 
-        HeadingMd {
-            text: TR2.lookup(TrId.CreatingAccountHeader);
-            horizontal-alignment: center;
+        Image {
+            width: 22px;
+            source: Images.icon(root.open ? "chevron-up" : "chevron-down", 22px);
+            colorize: Theme.palette-muted;
+        }
+    }
+
+    TouchArea {
+        clicked => {
+            root.open = !root.open;
         }
     }
 }
 
-component SuccessPage inherits JumboIconPageBody {
-    ContentSection {
-        HorizontalLayout {
-            alignment: center;
-            WrappedIcon { }
+export component CreateAccountPage inherits Rectangle {
+    in property <CreateAccountProps> props;
+
+    property <string> new-label;
+    property <string> label-error;
+    property <bool> label-touched: false;
+    property <bool> advanced-open: false;
+    // Strings stand for u32 indices: Slint ints are i32.
+    property <string> next-available-index: CreateAccount.get-next-index();
+    property <string> new-index: CreateAccount.get-next-index();
+    property <string> index-message: CreateAccount.validate-new-index(root.new-index);
+    property <bool> has-errors: !root.label-touched || root.label-error != "" || root.index-message != "" || root.new-index == "";
+
+    // The CreateAccount global outlives this page; a stale Success or Error
+    // from a previous visit would otherwise block the form.
+    init => {
+        CreateAccount.state = CreateAccountState.Idle;
+    }
+
+    if CreateAccount.state == CreateAccountState.Idle: form := Page {
+        PageHeader {
+            title: TR2.lookup(TrId.CreateAccountTitle);
+            action-clicked => {
+                Navigate.backward();
+            }
         }
 
-        HeadingMd {
-            horizontal-alignment: center;
-            text: TR2.lookup(TrId.CreatingAccountSuccessHeader);
+        ScrollArea {
+            Input {
+                label: TR2.lookup(TrId.CreateAccountLabel);
+                placeholder: TR2.lookup(TrId.CreateAccountLabelFillerText);
+                value <=> root.new-label;
+                error: root.label-error;
+                changed(text) => {
+                    root.label-touched = true;
+                    root.label-error = CreateAccount.validate-new-label(text);
+                }
+                submitted(_text) => {
+                    form.dismiss-keyboard();
+                }
+            }
+
+            Disclosure {
+                text: TR2.lookup(TrId.CreateAccountAdvancedOptions);
+                open <=> root.advanced-open;
+            }
+
+            if root.advanced-open: Input {
+                label: TR2.lookup(TrId.CreateAccountIndex);
+                value: root.new-index;
+                input-type: InputType.number;
+                error: root.index-message;
+                changed(text) => {
+                    root.new-index = text;
+                }
+                submitted(text) => {
+                    if (text == "") {
+                        root.new-index = root.next-available-index;
+                    }
+                    form.dismiss-keyboard();
+                }
+            }
+
+            if root.advanced-open: MutedText {
+                text: "m/44'/60'/" + (root.new-index == "" ? "…" : root.new-index) + "'";
+                font-family: Mono.family;
+            }
+        }
+
+        Button {
+            text: TR2.lookup(TrId.CommonButtonCreate);
+            full-width: true;
+            disabled: root.has-errors;
+            clicked => {
+                CreateAccount.create-single-sig({
+                    label: root.new-label,
+                    index: root.new-index,
+                });
+            }
         }
     }
 
-    ButtonSection {
+    if CreateAccount.state == CreateAccountState.Creating: StatusView {
+        kind: StatusKind.working;
+        heading: TR2.lookup(TrId.CreatingAccountHeader);
+
+        Rectangle { vertical-stretch: 1; }
+    }
+
+    if CreateAccount.state == CreateAccountState.Success: StatusView {
+        kind: StatusKind.success;
+        heading: TR2.lookup(TrId.CreatingAccountSuccessHeader);
+
+        Rectangle { vertical-stretch: 1; }
+
         Button {
-            label: TR2.lookup(TrId.CommonButtonDone);
+            text: TR2.lookup(TrId.CommonButtonDone);
+            full-width: true;
             clicked => {
                 CreateAccount.state = CreateAccountState.Idle;
                 Navigate.backward();
             }
         }
     }
-}
 
-component ErrorPage inherits JumboIconPageBody {
-    ContentSection {
-        HorizontalLayout {
-            alignment: center;
-            WrappedIcon {
-                inner-icon: "close";
-            }
-        }
+    if CreateAccount.state == CreateAccountState.Error: StatusView {
+        kind: StatusKind.failure;
+        heading: TR2.lookup(TrId.CreatingAccountFailedHeader);
+        message: TR2.lookup(TrId.CreatingAccountFailedSubheader);
 
-        VerticalLayout {
-            spacing: Size.sz6;
-            HeadingMd {
-                horizontal-alignment: center;
-                text: TR2.lookup(TrId.CreatingAccountFailedHeader);
-            }
+        Rectangle { vertical-stretch: 1; }
 
-            TextMd {
-                horizontal-alignment: center;
-                text: TR2.lookup(TrId.CreatingAccountFailedSubheader);
-                color: Palette.content-tertiary;
-            }
-        }
-    }
-
-    ButtonSection {
         Button {
-            label: TR2.lookup(TrId.CommonButtonRetry);
-            importance: Importance.primary;
+            text: TR2.lookup(TrId.CommonButtonRetry);
+            full-width: true;
             clicked => {
                 CreateAccount.state = CreateAccountState.Idle;
             }
         }
     }
-}
-
-export component CreateAccountPage inherits BasePage {
-    in property <CreateAccountProps> props;
-
-    property <string> new-label;
-    property <bool> label-error: true;
-    // Use strings to represent u32, since slint ints are i32.
-    property <string> next-available-index: CreateAccount.get-next-index();
-    property <string> new-index: CreateAccount.get-next-index();
-    property <string> index-message: CreateAccount.validate-new-index(new-index);
-    property <bool> index-error: index-message != "";
-    property <bool> has-errors: label-error || index-error;
-
-    // The CreateAccount global outlives this page; a stale Success/Error left
-    // behind by a previous visit (e.g. leaving the success screen through a
-    // back gesture instead of Done) would otherwise block the form forever.
-    init => {
-        CreateAccount.state = CreateAccountState.Idle;
-    }
-
-    VerticalLayout {
-        visible: CreateAccount.state == CreateAccountState.Idle;
-        AppHeader {
-            title: TR2.lookup(TrId.CreateAccountTitle);
-
-            IconButton {
-                icon: "chevron-left";
-                size: Size.sz8;
-                importance: Importance.normal;
-                clicked => {
-                    CreateAccount.state = CreateAccountState.Idle;
-                    Navigate.backward();
-                }
-            }
-        }
-
-        PageBody {
-            p-x: Size.sz4;
-            p-y: Size.sz4;
-
-            ContentSection {
-                TitledInput {
-                    title: TR2.lookup(TrId.CreateAccountLabel);
-                    placeholder: TR2.lookup(TrId.CreateAccountLabelFillerText);
-                    has-notice: true;
-                    caps-mode: sentences;
-
-                    edited(text) => {
-                        new-label = text;
-                        self.message = CreateAccount.validate-new-label(text);
-                        self.has-notice = self.message != "";
-                        label-error = self.has-notice;
-                    }
-                }
-
-                ShowHide {
-                    text: TR2.lookup(TrId.CreateAccountAdvancedOptions);
-
-                    ContentSection {
-                        index-input := TitledInput {
-                            title: TR2.lookup(TrId.CreateAccountIndex);
-                            text: new-index;
-                            message: index-message;
-                            has-disabled: self.message != "" || self.text == "";
-                            input-type: InputType.number;
-                            bounded-number: true;
-                            minimum: "0";
-                            maximum: "2147483647";  // BIP32 hardened indices use bit 31 as flag, so max is 2^31-1
-
-                            edited(text) => {
-                                new-index = text;
-                                self.message = CreateAccount.validate-new-index(new-index);
-                                self.has-disabled = self.message != "" || text == "";
-                                index-error = self.has-disabled;
-                            }
-
-                            accepted(text) => {
-                                if (text == "") {
-                                    self.text = next-available-index;
-                                    self.edited(self.text);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            ButtonSection {
-                Button {
-                    label: TR2.lookup(TrId.CommonButtonCreate);
-                    enabled: !has-errors;
-                    clicked => {
-                        CreateAccount.create-single-sig({
-                            label: new-label,
-                            index: new-index,
-                        });
-                    }
-                }
-            }
-        }
-    }
-
-    if CreateAccount.state == CreateAccountState.Creating: LoadingPage { }
-    if CreateAccount.state == CreateAccountState.Success: SuccessPage { }
-    if CreateAccount.state == CreateAccountState.Error: ErrorPage { }
 }

@@ -1,0 +1,287 @@
+// SPDX-FileCopyrightText: 2026 Ethereum Foundation
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
+// The Ethereum-specific pieces every page is built from. Addresses and hashes
+// keep the chunked, alternating style the Ethereum Foundation's designer asked
+// to keep, in the monospace face so groups line up; addresses carry their
+// Jazzicon so they match the user's wallet at a glance.
+
+import { Theme, Images } from "@ui/theme.slint";
+import { Eth, HexLine, ShortAddress } from "../eth.slint";
+
+export global Mono {
+    out property <string> family: "Source Code Pro";
+}
+
+// Small-caps style section label.
+export component Eyebrow inherits Text {
+    color: Theme.palette-muted;
+    font-family: Theme.font-primary;
+    font-size: Theme.font-size-label;
+    font-weight: Theme.font-weight-medium;
+    letter-spacing: 1.2px;
+}
+
+export component BodyText inherits Text {
+    color: Theme.palette-foreground;
+    font-family: Theme.font-primary;
+    font-size: Theme.font-size-body;
+    wrap: word-wrap;
+}
+
+export component MutedText inherits Text {
+    color: Theme.palette-muted;
+    font-family: Theme.font-primary;
+    font-size: Theme.font-size-subtitle;
+    wrap: word-wrap;
+}
+
+// A hex value: a muted "0x", then lines of groups whose emphasis alternates,
+// so the first and the last group of each line stand out.
+export component HexBlock inherits VerticalLayout {
+    in property <string> value;
+    in property <int> groups-per-line: 4;
+    in property <length> size: 22px;
+    in property <bool> center: false;
+    property <[HexLine]> lines: Eth.hex-lines(root.value, root.groups-per-line);
+
+    spacing: 4px;
+
+    for line[li] in root.lines: HorizontalLayout {
+        alignment: root.center ? LayoutAlignment.center : LayoutAlignment.start;
+        spacing: 0px;
+
+        // "0x" on every line, shown on the first only, so the groups stay in
+        // columns: a text of spaces alone measures zero wide.
+        Text {
+            text: "0x";
+            color: li == 0 ? Theme.palette-muted : transparent;
+            font-family: Mono.family;
+            font-size: root.size;
+        }
+
+        for group[gi] in line.groups: Text {
+            text: (gi == 0 ? "" : " ") + group;
+            color: Math.mod(gi, 2) == 0 ? Theme.palette-foreground : Theme.palette-muted;
+            font-family: Mono.family;
+            font-size: root.size;
+        }
+    }
+}
+
+export component Jazzicon inherits Rectangle {
+    in property <string> address;
+    in property <length> size: 40px;
+
+    width: root.size;
+    height: root.size;
+    border-radius: root.size / 2;
+    clip: true;
+    background: Theme.palette-surface;
+
+    Image {
+        width: parent.width;
+        height: parent.height;
+        source: Eth.jazzicon(root.address, root.size);
+    }
+}
+
+// An address in full: its Jazzicon, then two lines of five groups.
+export component AddressBlock inherits HorizontalLayout {
+    in property <string> address;
+    in property <length> icon-size: 36px;
+    in property <length> text-size: 20px;
+
+    spacing: Theme.spacing-md;
+    alignment: start;
+
+    Jazzicon {
+        address: root.address;
+        size: root.icon-size;
+    }
+
+    HexBlock {
+        value: root.address;
+        groups-per-line: 5;
+        size: root.text-size;
+    }
+}
+
+// "0x4007f9…a6D0c9", for list rows.
+export component ShortAddressText inherits HorizontalLayout {
+    in property <string> address;
+    in property <length> size: 17px;
+    property <ShortAddress> parts: Eth.short-address(root.address);
+
+    alignment: start;
+    spacing: 0px;
+
+    Text {
+        text: root.parts.head;
+        color: Theme.palette-foreground;
+        font-family: Mono.family;
+        font-size: root.size;
+    }
+
+    if root.parts.tail != "": Text {
+        text: "…";
+        color: Theme.palette-muted;
+        font-family: Mono.family;
+        font-size: root.size;
+    }
+
+    Text {
+        text: root.parts.tail;
+        color: Theme.palette-foreground;
+        font-family: Mono.family;
+        font-size: root.size;
+    }
+}
+
+// A QR on a white plate in both themes: scanners reject light modules on a
+// dark ground. Never scaled past nearest-neighbour, or finder patterns blur.
+export component QrPanel inherits HorizontalLayout {
+    in property <string> data;
+    in property <length> size: 300px;
+
+    alignment: center;
+
+    Rectangle {
+        width: root.size;
+        height: root.size;
+        background: #ffffff;
+        border-radius: Theme.radius-md;
+        border-width: 1px;
+        border-color: Theme.palette-border.with-alpha(0.6);
+
+        if root.data != "": Image {
+            width: parent.width - 28px;
+            height: parent.height - 28px;
+            source: Eth.qr(root.data);
+            image-fit: contain;
+            image-rendering: pixelated;
+        }
+    }
+}
+
+// A grouped surface: ethereum.org's rounded card with a thin border.
+export component Panel inherits Rectangle {
+    in property <length> pad: Theme.spacing-lg;
+    in property <length> spacing: Theme.spacing-lg;
+
+    background: Theme.palette-surface;
+    border-radius: Theme.radius-md;
+    border-width: 1px;
+    border-color: Theme.palette-border.with-alpha(0.6);
+
+    VerticalLayout {
+        padding: root.pad;
+        spacing: root.spacing;
+
+        @children
+    }
+}
+
+export component PanelDivider inherits Rectangle {
+    height: 1px;
+    background: Theme.palette-border.with-alpha(0.6);
+}
+
+// A labelled value inside a panel: the eyebrow, an optional note on the
+// right, then the content.
+export component Field inherits VerticalLayout {
+    in property <string> label;
+    in property <string> trailing;
+
+    spacing: 6px;
+
+    HorizontalLayout {
+        Eyebrow {
+            text: root.label;
+            horizontal-stretch: 1;
+        }
+
+        if root.trailing != "": Text {
+            text: root.trailing;
+            color: Theme.palette-muted;
+            font-family: Theme.font-primary;
+            font-size: Theme.font-size-label;
+        }
+    }
+
+    @children
+}
+
+// A label / value row, for fingerprints, indices and the like.
+export component DetailRow inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> value;
+    in property <bool> mono: true;
+
+    spacing: Theme.spacing-md;
+
+    Text {
+        text: root.label;
+        horizontal-stretch: 1;
+        vertical-alignment: center;
+        color: Theme.palette-muted;
+        font-family: Theme.font-primary;
+        font-size: Theme.font-size-subtitle;
+    }
+
+    Text {
+        text: root.value;
+        vertical-alignment: center;
+        horizontal-alignment: right;
+        color: Theme.palette-foreground;
+        font-family: root.mono ? Mono.family : Theme.font-primary;
+        font-size: Theme.font-size-subtitle;
+    }
+}
+
+export enum NoticeTone {
+    warning,
+    danger,
+}
+
+// An inline warning band.
+export component Notice inherits Rectangle {
+    in property <string> text;
+    in property <NoticeTone> tone: NoticeTone.warning;
+    property <color> accent: root.tone == NoticeTone.danger ? Theme.palette-danger : Theme.color-warning;
+
+    background: root.accent.with-alpha(Theme.is-dark ? 0.16 : 0.10);
+    border-radius: Theme.radius-md;
+    border-width: 1px;
+    border-color: root.accent.with-alpha(0.5);
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+
+        Image {
+            width: 22px;
+            height: 22px;
+            y: 2px;
+            source: Images.icon("circle-alert", 22px);
+            colorize: root.accent;
+        }
+
+        Text {
+            text: root.text;
+            horizontal-stretch: 1;
+            color: Theme.palette-foreground;
+            font-family: Theme.font-primary;
+            font-size: Theme.font-size-subtitle;
+            wrap: word-wrap;
+        }
+    }
+}
+
+// The ETH glyph in the primary colour.
+export component EthGlyph inherits Image {
+    width: 27px;
+    height: 44px;
+    source: Images.image("eth-glyph");
+    colorize: Theme.palette-primary;
+}

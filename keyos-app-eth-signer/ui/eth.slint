@@ -1,0 +1,29 @@
+// SPDX-FileCopyrightText: 2026 Ethereum Foundation
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
+// Ethereum presentation helpers, all answered by Rust (src/eth_ui.rs): Slint
+// can neither slice a string nor draw pixels.
+
+// One line of a hex value, as four-character groups.
+export struct HexLine {
+    groups: [string],
+}
+
+// "0x4007f9" and "a6D0c9": an address short enough for a list row.
+export struct ShortAddress {
+    head: string,
+    tail: string,
+}
+
+export global Eth {
+    // A hex value (0x prefix optional, and dropped) as lines of
+    // `groups-per-line` four-character groups.
+    pure callback hex-lines(value: string, groups-per-line: int) -> [HexLine];
+    // MetaMask's Jazzicon for an address, drawn at `size`.
+    pure callback jazzicon(address: string, size: length) -> image;
+    // A QR code, always dark modules on a light ground.
+    pure callback qr(data: string) -> image;
+    pure callback short-address(address: string) -> ShortAddress;
+    // "Ethereum Mainnet" for "1"; empty for a chain this app does not know.
+    pure callback network-name(chain-id: string) -> string;
+}

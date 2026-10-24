@@ -1,0 +1,68 @@
+// SPDX-FileCopyrightText: 2026 Ethereum Foundation
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
+// Widgets for the recovery-phrase import page, taken from my-coin.
+
+import { Theme } from "@ui/theme.slint";
+import { Mono } from "eth-widgets.slint";
+
+// A Flickable placed straight into a layout takes its expands-to-parent default
+// size and can draw over its siblings, so it needs a clipping Rectangle around
+// it that the layout can size.
+export component ImportScrollBody inherits Rectangle {
+    clip: true;
+
+    Flickable {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        viewport-height: content.preferred-height;
+
+        content := VerticalLayout {
+            width: root.width;
+            spacing: Theme.spacing-md;
+
+            @children
+        }
+    }
+}
+
+// One numbered word of a recovery phrase, as a read-only pill.
+export component WordPill inherits Rectangle {
+    in property <int> index;
+    in property <string> word;
+
+    height: 40px;
+    background: Theme.palette-surface;
+    border-color: Theme.palette-border.with-alpha(0.6);
+    border-width: 1px;
+    border-radius: self.height / 2;
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-sm;
+        alignment: start;
+
+        Text {
+            vertical-alignment: center;
+            text: root.index;
+            color: Theme.palette-muted;
+            font-family: Mono.family;
+            font-size: Theme.font-size-label;
+            width: 22px;
+            horizontal-alignment: right;
+        }
+
+        Text {
+            vertical-alignment: center;
+            text: root.word;
+            color: Theme.palette-foreground;
+            font-family: Theme.font-primary;
+            font-size: Theme.font-size-subtitle;
+            font-weight: Theme.font-weight-medium;
+            overflow: elide;
+        }
+    }
+}

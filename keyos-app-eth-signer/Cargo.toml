@@ -1,10 +1,11 @@
-# SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
-# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Ethereum Foundation
+# SPDX-License-Identifier: MIT OR Apache-2.0
 
 [package]
 name = "eth-signer"
 version = "0.1.0"
 edition = "2021"
+license = "MIT OR Apache-2.0"
 
 [workspace]
 exclude = [".foundation-sdk"]

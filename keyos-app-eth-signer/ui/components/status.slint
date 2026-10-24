@@ -1,0 +1,78 @@
+// SPDX-FileCopyrightText: 2026 Ethereum Foundation
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
+// A centred outcome screen: working, done, failed, or a question. The
+// children are the buttons, stacked at the bottom.
+
+import { Theme, Images } from "@ui/theme.slint";
+import { Spinner, SpinnerSize } from "@ui/spinner.slint";
+import { Page } from "layout.slint";
+
+export enum StatusKind {
+    working,
+    success,
+    failure,
+    caution,
+}
+
+export component StatusView inherits Page {
+    in property <StatusKind> kind: StatusKind.working;
+    in property <string> heading;
+    in property <string> message;
+
+    property <color> accent: root.kind == StatusKind.success ? Theme.color-success
+        : root.kind == StatusKind.failure ? Theme.palette-danger
+        : root.kind == StatusKind.caution ? Theme.color-warning
+        : Theme.palette-primary;
+
+    // Any extra content (an address, a range) goes between the message and
+    // the buttons through `detail`.
+    Rectangle { vertical-stretch: 1; }
+
+    HorizontalLayout {
+        alignment: center;
+
+        if root.kind == StatusKind.working: Spinner {
+            size: SpinnerSize.lg;
+        }
+
+        if root.kind != StatusKind.working: Rectangle {
+            width: 88px;
+            height: 88px;
+            border-radius: 44px;
+            background: root.accent.with-alpha(Theme.is-dark ? 0.20 : 0.12);
+
+            // App images at 48px: the shared icon set tops out smaller, and an
+            // upscaled icon turns jagged.
+            Image {
+                width: 48px;
+                height: 48px;
+                source: root.kind == StatusKind.success ? Images.image("status-check")
+                    : root.kind == StatusKind.failure ? Images.image("status-x")
+                    : Images.image("status-circle-alert");
+                colorize: root.accent;
+            }
+        }
+    }
+
+    Text {
+        text: root.heading;
+        horizontal-alignment: center;
+        color: Theme.palette-foreground;
+        font-family: Theme.font-primary;
+        font-size: 26px;
+        font-weight: Theme.font-weight-medium;
+        wrap: word-wrap;
+    }
+
+    if root.message != "": Text {
+        text: root.message;
+        horizontal-alignment: center;
+        color: Theme.palette-muted;
+        font-family: Theme.font-primary;
+        font-size: Theme.font-size-subtitle;
+        wrap: word-wrap;
+    }
+
+    @children
+}
